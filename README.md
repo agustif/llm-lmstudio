@@ -1,14 +1,25 @@
 # llm-lmstudio
 
+[![PyPI](https://img.shields.io/pypi/v/llm-lmstudio.svg)](https://pypi.org/project/llm-lmstudio/)
+[![Changelog](https://img.shields.io/github/v/release/agustif/llm-lmstudio?include_prereleases&label=changelog)](https://github.com/agustif/llm-lmstudio/releases)
+[![Tests](https://github.com/agustif/llm-lmstudio/actions/workflows/test.yml/badge.svg)](https://github.com/agustif/llm-lmstudio/actions/workflows/test.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/agustif/llm-lmstudio/blob/main/LICENSE)
+
 This is a plugin for [Simon Willison's LLM command-line utility](https://llm.datasette.io/) that lets you talk to models running on a local [LMStudio](https://lmstudio.ai/) server.
 
 ## Installation
 
-Make sure you have `llm` installed, then install this plugin:
+Make sure you have `llm` installed, then install this plugin from PyPI:
 
 ```bash
-llm install llm-lmstudio
+pip install llm-lmstudio
 ```
+
+Or, to install the latest development version directly from GitHub:
+```bash
+llm install -U git+https://github.com/agustif/llm-lmstudio.git
+```
+Alternatively, `llm install llm-lmstudio` will also find and install the plugin.
 
 ## Usage
 
@@ -19,13 +30,13 @@ Once the server is up, the plugin should automatically find the models you have 
 ```bash
 llm models list
 ```
-You should see your LMStudio models listed, likely prefixed with `lmstudio/`.
+You should see your LMStudio models listed, likely prefixed with `lmstudio/` (e.g., `LMStudio: lmstudio/llava-v1.5-7b`).
 
 To run a prompt against a model:
 
 ```bash
 # Replace 'your-model-id' with the actual ID shown in 'llm models list'
-# e.g., lmstudio/phi-2.Q4_K_S.gguf
+# e.g., llm -m lmstudio/llava-v1.5-7b "Describe this image"
 llm -m lmstudio/your-model-id -o temperature 0.7 -o max_tokens 100 "Tell me a joke"
 ```
 
@@ -36,6 +47,21 @@ llm chat -m lmstudio/your-model-id
 ```
 
 You can exit the chat by typing `exit` or `quit`.
+
+### Vision Model Support
+
+The plugin supports vision-language models (VLMs).
+- When using a VLM, you can attach images using the standard `llm` attachment syntax:
+  ```bash
+  llm chat -m lmstudio/your-vlm-id -a path/to/image.png "Describe this image"
+  ```
+  Or for a single prompt:
+  ```bash
+  llm -m lmstudio/your-vlm-id -a path/to/image.png "What is in this picture?"
+  ```
+- The plugin will encode the image and send it to the model.
+- This feature's success depends on the specific VLM, its configuration in LM Studio, and LM Studio's API correctly handling image data.
+- Models that support vision may have a `👁️` (eye icon) in their `display_suffix` when inspected via `llm inspect -m lmstudio/your-vlm-id`, though this may not always render in `llm models list`.
 
 ### Embedding Models
 
@@ -55,15 +81,18 @@ llm embed -m lmstudio/your-embedding-model-id -c "This is the text to embed"
 
 ## Configuration
 
-The plugin connects to the LMStudio server API, expecting it at `http://localhost:1234` by default.
+The plugin connects to the LMStudio server API. By default, it tries `http://localhost:1234`.
 
-If your LMStudio server is running on a different address or port, you can set the `LMSTUDIO_API_BASE` environment variable:
-
-```bash
-export LMSTUDIO_API_BASE="http://your-server-address:port"
-```
-
-The plugin will use this address to connect to the `/v1/models`, `/v1/completions`, and `/v1/chat/completions` endpoints.
+You can configure the server URL(s) using the `LMSTUDIO_API_BASE` environment variable.
+- For a single server:
+  ```bash
+  export LMSTUDIO_API_BASE="http://your-server-address:port"
+  ```
+- For multiple servers (the plugin will try them in order):
+  ```bash
+  export LMSTUDIO_API_BASE="http://server1:1234,http://server2:5678,https://server3:custom_port"
+  ```
+The variable accepts one or more `http[s]://host:port` values, separated by commas (spaces around commas are optional). The plugin automatically attempts to append `/v1` or `/api/v0` to the determined base URL(s) as needed when probing the server.
 
 ## Model Options
 
@@ -75,22 +104,27 @@ llm -m lmstudio/your-model-id -o temperature 0.7 -o max_tokens 100 "Tell me a jo
 
 ## Automatic Model Loading
 
-If a selected model is not currently loaded in LM Studio, the plugin will attempt to automatically load it by invoking `lms load <model_id>`. You may see progress messages from LM Studio in your terminal during this process.
+If a selected model is not currently loaded in LM Studio, the plugin will attempt to automatically load it by invoking `lms load <model_id>` (if `lms` CLI is installed and configured). You may see progress messages from LM Studio in your terminal during this process.
 
-## Vision Model Support (Experimental)
+## Development
 
-The plugin has initial support for vision-language models (VLMs).
-- Models identified as VLMs (often through the `/api/v0` endpoint of LM Studio) will be indicated with a "◎" symbol in the `llm models list` output (e.g., `lmstudio/your-vlm-model ◎`).
-- When using a VLM in chat, you can attach images using the standard `llm` attachment syntax (e.g., `llm chat -m lmstudio/your-vlm-model -a path/to/image.png "Describe this image"`). The plugin will encode the image and send it to the model.
-- This feature's success depends on the specific VLM, its configuration in LM Studio, and LM Studio's API correctly handling image data.
+To set up this plugin for development:
+1. Clone the repository.
+2. Create a virtual environment: `python -m venv .venv`
+3. Activate it: `source .venv/bin/activate`
+4. Install dependencies, including test dependencies: `pip install -e ".[test]"`
+5. Run tests: `pytest` or `PYTHONPATH=. pytest -v`
+
+The asynchronous tests in `tests/test_llm_lmstudio_async.py` use `pytest-vcr` to record and replay HTTP interactions with the LM Studio server. To record new cassettes:
+1. Ensure LM Studio is running with the target model(s) loaded (e.g., `llava-v1.5-7b`).
+2. Temporarily set `record_mode='all'` in the `@pytest.mark.vcr` decorator for the relevant tests in `tests/test_llm_lmstudio_async.py`.
+3. Run `PYTHONPATH=. pytest -v -s tests/test_llm_lmstudio_async.py`.
+4. Cassettes will be saved in `tests/cassettes/`.
+5. **Important:** Change `record_mode` back to `'once'` after recording.
+6. Commit the new/updated cassettes.
 
 ## Missing features / Known Issues:
 
 - [x] Add image support on chat for local multi-modal or vision-language models. *(Initial support added. Further testing and refinement are needed for robustness across various VLMs and LM Studio versions.)*
 - The reliability and capabilities of image support can vary significantly based on the specific VLM and its implementation within LM Studio.
-- Consider adding more verbose logging or feedback mechanisms for image processing stages.
-
-~ Almost one-shotted by o3, use at your own risk.
-
-“LMSTUDIO_SERVERS accepts one or more http[s]://host:port values separated by commas (spaces optional).
-If you previously used LMSTUDIO_API_BASE, it still works but is deprecated.”
+- The icons indicating model capabilities (loaded, vision, tools) in `llm models list` may not render correctly in all terminals or may be stripped by `llm`. They are more reliably viewed with `llm inspect <model_id>`.
