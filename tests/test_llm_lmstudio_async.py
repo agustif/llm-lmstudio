@@ -42,7 +42,7 @@ BASE_URL = "http://localhost:1234" # VCR will handle this
 
 @pytest.mark.vcr
 @patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
-async def test_get_async_model(mock_fetch): # mock_fetch is the MagicMock from @patch
+async def test_get_async_model(mock_fetch_list): # Renamed mock_fetch to avoid clash
     """Test retrieving the specific async model instance."""
     # This test focuses on ensuring discovery works via VCR for the specific model
     model = llm.get_async_model(MODEL_ID)
@@ -61,8 +61,9 @@ async def test_get_async_model(mock_fetch): # mock_fetch is the MagicMock from @
 
 
 @pytest.mark.vcr
-@patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
-async def test_async_prompt_non_streaming(mock_fetch):
+@patch('llm_lmstudio.LMStudioAsyncModel._is_model_loaded', return_value=True) # Mock for execute
+@patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE) # Mock for get_async_model
+async def test_async_prompt_non_streaming(mock_fetch_list, mock_is_loaded):
     """Test a basic non-streaming async prompt using model.response()."""
     # NOTE: Requires cassette generated against a live LM Studio server
     # with MODEL_ID loaded. Assertions MUST be updated after recording.
@@ -89,8 +90,9 @@ async def test_async_prompt_non_streaming(mock_fetch):
 
 
 @pytest.mark.vcr
+@patch('llm_lmstudio.LMStudioAsyncModel._is_model_loaded', return_value=True)
 @patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
-async def test_async_prompt_streaming(mock_fetch):
+async def test_async_prompt_streaming(mock_fetch_list, mock_is_loaded):
     """Test a basic streaming async prompt using model.response()."""
     # NOTE: Requires cassette generated against a live LM Studio server
     # with MODEL_ID loaded. Assertions MUST be updated after recording.
@@ -107,8 +109,9 @@ async def test_async_prompt_streaming(mock_fetch):
 
 
 @pytest.mark.vcr
+@patch('llm_lmstudio.LMStudioAsyncModel._is_model_loaded', return_value=True)
 @patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
-async def test_async_prompt_schema(mock_fetch):
+async def test_async_prompt_schema(mock_fetch_list, mock_is_loaded):
     """Test non-streaming async prompt with a schema using model.response()."""
     # NOTE: Requires cassette generated against a live LM Studio server
     # with MODEL_ID loaded. Assertions MUST be updated after recording.
