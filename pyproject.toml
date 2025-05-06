@@ -7,11 +7,20 @@ requires-python = ">=3.8"
 
 dependencies = [
     "llm>=0.23",      # Ensure a recent version of the LLM CLI library
-    "requests>=2.0"   # HTTP library for API calls (or use httpx/openai as needed)
+    "requests>=2.0",   # HTTP library for API calls
+    "httpx>=0.20"     # HTTP library for async API calls
 ]
 
 [project.entry-points.llm]
 lmstudio = "llm_lmstudio"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-vcr"
+]
 
 [tool.pytest.ini_options]
 markers = [
