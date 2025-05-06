@@ -1,0 +1,20 @@
+[project]
+name = "llm-lmstudio"
+version = "0.1.0"
+description = "LLM plugin for models served by LMStudio (local LLM studio HTTP API)"
+authors = [{ name = "Agusti" }]
+requires-python = ">=3.8"
+
+dependencies = [
+    "llm>=0.23",      # Ensure a recent version of the LLM CLI library
+    "requests>=2.0"   # HTTP library for API calls (or use httpx/openai as needed)
+]
+
+[project.entry-points.llm]
+lmstudio = "llm_lmstudio"
+
+[tool.pytest.ini_options]
+markers = [
+    "vcr: mark test to use VCR for HTTP request recording"
+]
+asyncio_default_fixture_loop_scope = "function"

@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+wheels/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# OS generated files
+.DS_Store
+DEV-PLAN.md
+icon.png
+.vscode
