@@ -5,34 +5,64 @@ import llm
 import json
 # import respx # No longer using respx
 import httpx
-# from unittest.mock import patch # No longer needed
+from unittest.mock import patch # ADDED
 
 # Mark all tests in this file as asyncio
 pytestmark = pytest.mark.asyncio
+
+# --- Constants for Mocking ---
+# This is the raw_id that _fetch_models would return, and llm.get_async_model will look for.
+MOCK_RAW_MODEL_ID = "llava-v1.5-7b"
+# This is the model_id llm will use (plugin prefix + raw_id if multiple servers, just raw_id if single default server)
+# For these tests, assuming single server context, so MODEL_ID = MOCK_RAW_MODEL_ID
+MODEL_ID = MOCK_RAW_MODEL_ID
+
+MOCK_MODELS_LIST = [{
+    'id': MOCK_RAW_MODEL_ID, # Corresponds to raw_id in the plugin
+    'type': 'vlm',          # Ensures supports_images=True logic path
+    'vision': True,         # Explicit vision flag
+    'state': 'loaded',      # Assumed loaded for testing
+    'publisher': 'mock_publisher', # Example metadata
+    'architecture': 'mock_arch',
+    'quantization': 'mock_quant',
+    'max_context_length': 2048
+}]
+MOCK_API_PATH = "/api/v0" # API path prefix the plugin would discover
+MOCK_FETCH_MODELS_RETURN_VALUE = (MOCK_MODELS_LIST, MOCK_API_PATH)
 
 # --- Test Data ---
 
 # Target model ID for VCR tests should be the plain ID llm uses to find the model.
 # The plugin internally maps this to the raw_id for API calls.
 # This assumes 'llava-v1.5-7b' is the ID as recognized by llm after plugin registration.
-MODEL_ID = "llava-v1.5-7b" 
+# MODEL_ID = "llava-v1.5-7b" # MOVED UP and renamed for clarity with mock
 BASE_URL = "http://localhost:1234" # VCR will handle this
 
 # --- Tests ---
 
 @pytest.mark.vcr
-async def test_get_async_model():
+@patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
+async def test_get_async_model(mock_fetch): # mock_fetch is the MagicMock from @patch
     """Test retrieving the specific async model instance."""
     # This test focuses on ensuring discovery works via VCR for the specific model
     model = llm.get_async_model(MODEL_ID)
     assert isinstance(model, llm.AsyncModel)
-    assert model.model_id == MODEL_ID
+    assert model.model_id == MODEL_ID # llm.get_model ensures this matches the requested ID
+    # We need to assert against the *actual* raw_id property if it's different,
+    # or that the model instance has the correct raw_id for API calls.
+    # The model_id used by llm should be "llava-v1.5-7b" (if single server)
+    # or "lmstudio/llava-v1.5-7b" (if plugin prefix added by llm itself)
+    # The `model.model_id` from llm.get_model IS the key used to find it.
+    # Our plugin's internal raw_id should be MOCK_RAW_MODEL_ID.
+    assert model.raw_id == MOCK_RAW_MODEL_ID
+
     from llm_lmstudio import LMStudioAsyncModel
     assert isinstance(model, LMStudioAsyncModel)
 
 
 @pytest.mark.vcr
-async def test_async_prompt_non_streaming():
+@patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
+async def test_async_prompt_non_streaming(mock_fetch):
     """Test a basic non-streaming async prompt using model.response()."""
     # NOTE: Requires cassette generated against a live LM Studio server
     # with MODEL_ID loaded. Assertions MUST be updated after recording.
@@ -59,7 +89,8 @@ async def test_async_prompt_non_streaming():
 
 
 @pytest.mark.vcr
-async def test_async_prompt_streaming():
+@patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
+async def test_async_prompt_streaming(mock_fetch):
     """Test a basic streaming async prompt using model.response()."""
     # NOTE: Requires cassette generated against a live LM Studio server
     # with MODEL_ID loaded. Assertions MUST be updated after recording.
@@ -76,7 +107,8 @@ async def test_async_prompt_streaming():
 
 
 @pytest.mark.vcr
-async def test_async_prompt_schema():
+@patch('llm_lmstudio._fetch_models', return_value=MOCK_FETCH_MODELS_RETURN_VALUE)
+async def test_async_prompt_schema(mock_fetch):
     """Test non-streaming async prompt with a schema using model.response()."""
     # NOTE: Requires cassette generated against a live LM Studio server
     # with MODEL_ID loaded. Assertions MUST be updated after recording.

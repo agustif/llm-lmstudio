@@ -16,29 +16,20 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
-    - name: Check Python version (skip 3.9)
-      if: matrix.python-version == '3.9'
-      run: |
-        echo "Skipping test job for Python 3.9 as it is explicitly excluded"
-        exit 0 # Exit successfully to prevent job failure if 3.9 somehow runs
-
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      if: matrix.python-version != '3.9'
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: pip
         cache-dependency-path: pyproject.toml
     - name: Install dependencies
-      if: matrix.python-version != '3.9'
       run: |
         python -m pip install --upgrade pip
         python -m pip install -e '.[test]'
     - name: Run tests
-      if: matrix.python-version != '3.9'
       run: |
         python -m pytest
   deploy:
