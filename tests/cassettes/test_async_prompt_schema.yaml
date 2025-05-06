@@ -1,0 +1,54 @@
+interactions:
+- request:
+    body: '{"model":"llava-v1.5-7b","messages":[{"role":"user","content":[{"type":"text","text":"Analyze
+      the sentiment of this sentence: ''I love sunny days!''"}]}],"response_format":{"type":"json_schema","json_schema":{"name":"llm_generated_schema","schema":{"type":"object","properties":{"sentiment":{"type":"string","enum":["positive","neutral","negative"]},"confidence":{"type":"number","minimum":0,"maximum":1}},"required":["sentiment","confidence"]}}},"stream":false}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '460'
+      content-type:
+      - application/json
+      host:
+      - localhost:1234
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: http://localhost:1234/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-ubdpoq28z9i2bt06v7r0m\",\n  \"object\": \"chat.completion\",\n
+        \ \"created\": 1746572548,\n  \"model\": \"llava-v1.5-7b\",\n  \"choices\":
+        [\n    {\n      \"index\": 0,\n      \"logprobs\": null,\n      \"finish_reason\":
+        \"stop\",\n      \"message\": {\n        \"role\": \"assistant\",\n        \"content\":
+        \"{ \\\"sentiment\\\": \\\"positive\\\" , \\\"confidence\\\": 0.95 }\",\n
+        \       \"reasoning_content\": \"\"\n      }\n    }\n  ],\n  \"usage\": {\n
+        \   \"prompt_tokens\": 29,\n    \"completion_tokens\": 20,\n    \"total_tokens\":
+        49\n  },\n  \"stats\": {},\n  \"system_fingerprint\": \"llava-v1.5-7b\"\n}"
+    headers:
+      Access-Control-Allow-Headers:
+      - '*'
+      Access-Control-Allow-Origin:
+      - '*'
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '549'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Tue, 06 May 2025 23:02:29 GMT
+      ETag:
+      - W/"225-FauuouDfpAFpvcameH3gL4D9r0A"
+      Keep-Alive:
+      - timeout=5
+      X-Powered-By:
+      - Express
+    status:
+      code: 200
+      message: OK
+version: 1
