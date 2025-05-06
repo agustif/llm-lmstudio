@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.1.0 - 2024-08-01
+## v0.1.0 - 2025-05-07
 
 ### Added
 - Initial support for Vision Language Models (VLMs) allowing image attachments with prompts via `llm -a path/to/image.png ...`.
@@ -23,7 +23,6 @@
 - `llm.Response.text()` is now correctly awaited in async tests.
 
 ### Changed
-- Simplified server configuration: `LMSTUDIO_API_BASE` is now the sole environment variable for specifying server URLs (supports single or comma-separated multiple URLs). `LMSTUDIO_SERVERS` is no longer used.
 - Updated README with improved installation instructions, usage examples, vision support details, configuration, and a development section including VCR cassette generation.
 
 ### Known Issues
