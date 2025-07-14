@@ -4,9 +4,7 @@ import llm
 # import llm_lmstudio # Import no longer needed if relying on entry points
 import json
 # import respx # No longer using respx
-import httpx
 from unittest.mock import patch # ADDED
-from typing import Dict, Any # Reverted typing, before_record_log removed for now
 import logging # ADDED for VCR logging
 import os # For cassette_library_dir
 
@@ -69,7 +67,7 @@ async def test_get_async_model(mock_fetch_list):
         # For now, focus on VCR generation.
         # assert hasattr(model, 'display_suffix') 
         # assert "👁" in model.display_suffix
-    except Exception as e:
+    except Exception:
         # print(f"DEBUG: test_get_async_model EXCEPTION: {e}") # Removed diagnostic
         raise
 
@@ -91,7 +89,7 @@ async def test_async_prompt_non_streaming(mock_fetch_list, mock_is_loaded):
         usage = await response.usage()
         assert hasattr(usage, "input"), "Usage object is missing 'input'"
         assert hasattr(usage, "output"), "Usage object is missing 'output'"
-    except Exception as e:
+    except Exception:
         # print(f"DEBUG: test_async_prompt_non_streaming EXCEPTION: {e}") # Removed diagnostic
         raise
 
@@ -127,7 +125,7 @@ async def test_async_prompt_streaming(mock_fetch_list, mock_is_loaded):
         assert len(retrieved_texts) > 0, "Should have collected some text from stream"
         full_response_text = "".join(retrieved_texts)
         assert full_response_text.strip()
-    except Exception as e:
+    except Exception:
         # print(f"DEBUG: test_async_prompt_streaming EXCEPTION: {e}") # Removed diagnostic
         raise
 
@@ -157,6 +155,6 @@ async def test_async_prompt_schema(mock_fetch_list, mock_is_loaded):
         assert "confidence" in parsed_json
         assert parsed_json["sentiment"] in ["positive", "neutral", "negative"]
         assert 0 <= parsed_json["confidence"] <= 1
-    except Exception as e:
+    except Exception:
         # print(f"DEBUG: test_async_prompt_schema EXCEPTION: {e}") # Removed diagnostic
         raise

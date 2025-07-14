@@ -1,9 +1,7 @@
 # tests/test_llm_lmstudio.py
 import pytest
 from unittest.mock import MagicMock, patch
-import sys
-import io
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
 from llm_lmstudio import LMStudioModel 
 import llm # Import the llm module itself for llm.Prompt
