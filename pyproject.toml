@@ -11,6 +11,13 @@ dependencies = [
     "httpx>=0.20"     # HTTP library for async API calls
 ]
 
+[project.urls]
+Homepage = "https://github.com/agustif/llm-lmstudio"
+Issues = "https://github.com/agustif/llm-lmstudio/issues"
+CI = "https://github.com/agustif/llm-lmstudio/actions"
+Changelog = "https://github.com/agustif/llm-lmstudio/releases"
+
+
 [project.entry-points.llm]
 lmstudio = "llm_lmstudio"
 
