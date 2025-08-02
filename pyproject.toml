@@ -2,6 +2,7 @@
 name = "llm-lmstudio"
 version = "0.1.0"
 description = "LLM plugin for models served by LMStudio (local LLM studio HTTP API)"
+readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Agusti" }]
 requires-python = ">=3.9"
 
