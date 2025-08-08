@@ -256,8 +256,14 @@ class LMStudioModel(LMStudioBaseModel):
             print(f"\rLoading model '{self.raw_id}'...", end='', file=sys.stderr)
 
         try:
+            # Assume the first server is the first server to load the model from
+            server = urlparse(SERVER_LIST[0])
+            lms_load_cmd = ["lms", "load", self.raw_id, "--host", server.hostname, "--port", str(server.port)]
+            if debug_enabled:
+                print(f"Running command '{lms_load_cmd}'", file=sys.stderr)
+
             process = subprocess.Popen(
-                ["lms", "load", self.raw_id],
+                lms_load_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True, # Decode output as text
