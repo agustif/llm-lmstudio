@@ -18,7 +18,7 @@ from pydantic import Field
 raw = (os.getenv("LMSTUDIO_API_BASE")       # singular, supports comma-separated list
        or "http://localhost:1234")             # hard default
 SERVER_LIST = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
-TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", 4))
+TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", 10))
 
 # --------------------------------------------------------------------------- #
 #  Internal helpers                                                           #
@@ -258,7 +258,7 @@ class LMStudioModel(LMStudioBaseModel):
         try:
             # Assume the first server is the first server to load the model from
             server = urlparse(SERVER_LIST[0])
-            lms_load_cmd = ["lms", "load", self.raw_id, "--host", server.hostname, "--port", str(server.port)]
+            lms_load_cmd = ["lms", "load", "--exact", self.raw_id, "--host", server.hostname, "--port", str(server.port)]
             if debug_enabled:
                 print(f"Running command '{lms_load_cmd}'", file=sys.stderr)
 
