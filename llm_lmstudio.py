@@ -19,6 +19,7 @@ raw = (os.getenv("LMSTUDIO_API_BASE")       # singular, supports comma-separated
        or "http://localhost:1234")             # hard default
 SERVER_LIST = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
 TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", 10))
+LLM_LMSTUDIO_TTL = os.getenv("LLM_LMSTUDIO_TTL")
 
 # --------------------------------------------------------------------------- #
 #  Internal helpers                                                           #
@@ -101,7 +102,7 @@ def register_models(register):
 
             raw_id = m['id']
             if single_server:
-                model_id = raw_id
+                model_id = f"lmstudio/{raw_id}"
             else:
                 model_id = f"lmstudio@{_host_tag(base)}/{raw_id}"
 
@@ -259,6 +260,8 @@ class LMStudioModel(LMStudioBaseModel):
             # Assume the first server is the first server to load the model from
             server = urlparse(SERVER_LIST[0])
             lms_load_cmd = ["lms", "load", "--exact", self.raw_id, "--host", server.hostname, "--port", str(server.port)]
+            if LLM_LMSTUDIO_TTL is not None:
+                lms_load_cmd = lms_load_cmd + ["--ttl", LLM_LMSTUDIO_TTL]
             if debug_enabled:
                 print(f"Running command '{lms_load_cmd}'", file=sys.stderr)
 
