@@ -29,8 +29,8 @@ def vcr_cassette_dir(request):
 # This is the raw_id that _fetch_models would return, and llm.get_async_model will look for.
 MOCK_RAW_MODEL_ID = "llava-v1.5-7b"
 # This is the model_id llm will use (plugin prefix + raw_id if multiple servers, just raw_id if single default server)
-# For these tests, assuming single server context, so MODEL_ID = MOCK_RAW_MODEL_ID
-MODEL_ID = MOCK_RAW_MODEL_ID
+# For these tests, assuming single server context, so MODEL_ID = lmstudio prefix + MOCK_RAW_MODEL_ID
+MODEL_ID = "lmstudio/" + MOCK_RAW_MODEL_ID
 
 MOCK_MODELS_LIST = [
     {

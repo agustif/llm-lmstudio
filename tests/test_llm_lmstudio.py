@@ -419,6 +419,7 @@ def test_attempt_load_model_respects_server_list(monkeypatch):
     assert captured_cmd["value"] == [
         "lms",
         "load",
+        "--exact",
         "test-raw",
         "--host",
         "10.0.0.5",
