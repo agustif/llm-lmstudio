@@ -30,6 +30,11 @@ test = [
     "pytest-vcr"
 ]
 
+[build-system]
+requires = ["setuptools>=62.3.2"]
+build-backend = "setuptools.build_meta"
+
+
 [tool.pytest.ini_options]
 markers = [
     "vcr: mark test to use VCR for HTTP request recording"
