@@ -1,9 +1,11 @@
+import io
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import llm
 import pytest
 
+import llm_lmstudio
 from llm_lmstudio import LMStudioModel
 
 # --- Fixtures ---
@@ -381,3 +383,45 @@ def test_system_prompt_in_conversation_history(vlm_model, mock_prompt_factory):
     assert messages[1]["role"] == "user"
     assert messages[2]["role"] == "assistant"
     assert messages[3]["role"] == "user"
+
+
+def test_attempt_load_model_respects_server_list(monkeypatch):
+    monkeypatch.setattr(llm_lmstudio, "SERVER_LIST", ["https://10.0.0.5:9000"])
+    monkeypatch.setattr(
+        llm_lmstudio.LMStudioModel, "_is_model_loaded", lambda self: True
+    )
+
+    captured_cmd = {}
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO("")
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        captured_cmd["value"] = cmd
+        return FakeProcess()
+
+    monkeypatch.setattr(llm_lmstudio.subprocess, "Popen", fake_popen)
+
+    model = llm_lmstudio.LMStudioModel(
+        model_id="test-id",
+        base_url="https://10.0.0.5:9000",
+        raw_id="test-raw",
+        api_path_prefix="/api/v0",
+    )
+
+    assert model._attempt_load_model() is True
+    assert captured_cmd["value"] == [
+        "lms",
+        "load",
+        "test-raw",
+        "--host",
+        "10.0.0.5",
+        "--port",
+        "9000",
+    ]
