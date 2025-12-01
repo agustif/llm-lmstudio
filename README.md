@@ -110,10 +110,13 @@ If a selected model is not currently loaded in LM Studio, the plugin will attemp
 
 To set up this plugin for development:
 1. Clone the repository.
-2. Create a virtual environment: `python -m venv .venv`
-3. Activate it: `source .venv/bin/activate`
-4. Install dependencies, including test dependencies: `pip install -e ".[test]"`
-5. Run tests: `pytest` or `PYTHONPATH=. pytest -v`
+2. Run tests `uv run --all-extras pytest`
+
+Or do the classic complicated dance:
+1. Create a virtual environment: `python -m venv .venv`
+2. Activate it: `source .venv/bin/activate`
+3. Install dependencies, including test dependencies: `pip install -e ".[test]"`
+4. Run tests: `pytest` or `PYTHONPATH=. pytest -v`
 
 The asynchronous tests in `tests/test_llm_lmstudio_async.py` use `pytest-vcr` to record and replay HTTP interactions with the LM Studio server. To record new cassettes:
 1. Ensure LM Studio is running with the target model(s) loaded (e.g., `llava-v1.5-7b`).
@@ -125,6 +128,4 @@ The asynchronous tests in `tests/test_llm_lmstudio_async.py` use `pytest-vcr` to
 
 ## Missing features / Known Issues:
 
-- [x] Add image support on chat for local multi-modal or vision-language models. *(Initial support added. Further testing and refinement are needed for robustness across various VLMs and LM Studio versions.)*
 - The reliability and capabilities of image support can vary significantly based on the specific VLM and its implementation within LM Studio.
-- The icons indicating model capabilities (loaded, vision, tools) in `llm models list` may not render correctly in all terminals or may be stripped by `llm`. They are more reliably viewed with `llm inspect <model_id>`.
