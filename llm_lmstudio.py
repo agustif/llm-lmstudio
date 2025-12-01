@@ -18,7 +18,7 @@ from pydantic import Field
 raw = (os.getenv("LMSTUDIO_API_BASE")       # singular, supports comma-separated list
        or "http://localhost:1234")             # hard default
 SERVER_LIST = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
-TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", 10))
+TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", 90))
 LLM_LMSTUDIO_TTL = os.getenv("LLM_LMSTUDIO_TTL")
 
 # --------------------------------------------------------------------------- #
