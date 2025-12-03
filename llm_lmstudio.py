@@ -361,7 +361,7 @@ class LMStudioBaseModel:
                 "--exact",
                 self.raw_id,
                 "--host",
-                server.hostname,
+                str(server.hostname),
                 "--port",
                 str(server.port),
             ]
