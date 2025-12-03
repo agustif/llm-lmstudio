@@ -1,0 +1,184 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.4
+    method: GET
+    uri: http://localhost:1234/api/v0/models
+  response:
+    body:
+      string: "{\n  \"data\": [\n    {\n      \"id\": \"openai/gpt-oss-20b\",\n      \"object\":
+        \"model\",\n      \"type\": \"llm\",\n      \"publisher\": \"openai\",\n      \"arch\":
+        \"gpt-oss\",\n      \"compatibility_type\": \"gguf\",\n      \"quantization\":
+        \"MXFP4\",\n      \"state\": \"loaded\",\n      \"max_context_length\": 131072,\n
+        \     \"loaded_context_length\": 4096,\n      \"capabilities\": [\n        \"tool_use\"\n
+        \     ]\n    },\n    {\n      \"id\": \"qwen3-4b\",\n      \"object\": \"model\",\n
+        \     \"type\": \"llm\",\n      \"publisher\": \"Qwen\",\n      \"arch\":
+        \"qwen3\",\n      \"compatibility_type\": \"gguf\",\n      \"quantization\":
+        \"Q4_K_M\",\n      \"state\": \"loaded\",\n      \"max_context_length\": 40960,\n
+        \     \"loaded_context_length\": 4096,\n      \"capabilities\": [\n        \"tool_use\"\n
+        \     ]\n    },\n    {\n      \"id\": \"llava-v1.5-7b-llamafile\",\n      \"object\":
+        \"model\",\n      \"type\": \"vlm\",\n      \"publisher\": \"mozilla-ai\",\n
+        \     \"arch\": \"llama\",\n      \"compatibility_type\": \"gguf\",\n      \"quantization\":
+        \"Q4_K\",\n      \"state\": \"not-loaded\",\n      \"max_context_length\":
+        4096\n    },\n    {\n      \"id\": \"text-embedding-mxbai-embed-large-v1\",\n
+        \     \"object\": \"model\",\n      \"type\": \"embeddings\",\n      \"publisher\":
+        \"mixedbread-ai\",\n      \"arch\": \"bert\",\n      \"compatibility_type\":
+        \"gguf\",\n      \"quantization\": \"F16\",\n      \"state\": \"not-loaded\",\n
+        \     \"max_context_length\": 512\n    },\n    {\n      \"id\": \"text-embedding-nomic-embed-text-v1.5@q4_k_m\",\n
+        \     \"object\": \"model\",\n      \"type\": \"embeddings\",\n      \"publisher\":
+        \"nomic-ai\",\n      \"arch\": \"nomic-bert\",\n      \"compatibility_type\":
+        \"gguf\",\n      \"quantization\": \"Q4_K_M\",\n      \"state\": \"not-loaded\",\n
+        \     \"max_context_length\": 2048\n    },\n    {\n      \"id\": \"qwen/qwen3-vl-8b\",\n
+        \     \"object\": \"model\",\n      \"type\": \"vlm\",\n      \"publisher\":
+        \"qwen\",\n      \"arch\": \"qwen3_vl\",\n      \"compatibility_type\": \"mlx\",\n
+        \     \"quantization\": \"4bit\",\n      \"state\": \"not-loaded\",\n      \"max_context_length\":
+        262144,\n      \"capabilities\": [\n        \"tool_use\"\n      ]\n    },\n
+        \   {\n      \"id\": \"qwen/qwen3-vl-30b\",\n      \"object\": \"model\",\n
+        \     \"type\": \"vlm\",\n      \"publisher\": \"qwen\",\n      \"arch\":
+        \"qwen3_vl_moe\",\n      \"compatibility_type\": \"mlx\",\n      \"quantization\":
+        \"4bit\",\n      \"state\": \"not-loaded\",\n      \"max_context_length\":
+        262144,\n      \"capabilities\": [\n        \"tool_use\"\n      ]\n    },\n
+        \   {\n      \"id\": \"text-embedding-nomic-embed-text-v1.5@q8_0\",\n      \"object\":
+        \"model\",\n      \"type\": \"embeddings\",\n      \"publisher\": \"nomic-ai\",\n
+        \     \"arch\": \"nomic-bert\",\n      \"compatibility_type\": \"gguf\",\n
+        \     \"quantization\": \"Q8_0\",\n      \"state\": \"not-loaded\",\n      \"max_context_length\":
+        2048\n    }\n  ],\n  \"object\": \"list\"\n}"
+    headers:
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '2612'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 03 Dec 2025 09:24:59 GMT
+      ETag:
+      - W/"a34-QKta1lw2pWZ4LKtF0OZbX5JOGwQ"
+      Keep-Alive:
+      - timeout=5
+      X-Powered-By:
+      - Express
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.4
+    method: GET
+    uri: http://localhost:1234/api/v0/models/qwen3-4b
+  response:
+    body:
+      string: "{\n  \"id\": \"qwen3-4b\",\n  \"object\": \"model\",\n  \"type\": \"llm\",\n
+        \ \"publisher\": \"Qwen\",\n  \"arch\": \"qwen3\",\n  \"compatibility_type\":
+        \"gguf\",\n  \"quantization\": \"Q4_K_M\",\n  \"state\": \"loaded\",\n  \"max_context_length\":
+        40960,\n  \"loaded_context_length\": 4096,\n  \"capabilities\": [\n    \"tool_use\"\n
+        \ ]\n}"
+    headers:
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '287'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 03 Dec 2025 09:25:00 GMT
+      ETag:
+      - W/"11f-7YcZOky5y1nvqtMCNLhZaOppW2s"
+      Keep-Alive:
+      - timeout=5
+      X-Powered-By:
+      - Express
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "qwen3-4b", "messages": [{"role": "user", "content": [{"type":
+      "text", "text": "Give me a cheerful greeting in one sentence."}]}], "stream":
+      false}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '157'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - python-requests/2.32.4
+    method: POST
+    uri: http://localhost:1234/api/v0/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-dxdgn6frpw895e6qlb0w9e\",\n  \"object\": \"chat.completion\",\n
+        \ \"created\": 1764753900,\n  \"model\": \"qwen3-4b\",\n  \"choices\": [\n
+        \   {\n      \"index\": 0,\n      \"message\": {\n        \"role\": \"assistant\",\n
+        \       \"content\": \"<think>\\nOkay, the user wants a cheerful greeting
+        in one sentence. Let me think about how to approach this.\\n\\nFirst, I need
+        to make sure it's positive and uplifting. Words like \\\"hello\\\" or \\\"good
+        day\\\" are good starts. Maybe add some emojis to enhance the cheerfulness.
+        Emojis like \U0001F31E or \U0001F60A can convey happiness.\\n\\nI should keep
+        it concise since it has to be one sentence. Let me brainstorm a few options.
+        \\\"Hello there! \u2600\uFE0F Wishing you a bright and joyful day!\\\" That's
+        two sentences, so I need to combine them. Maybe \\\"Hello there! \u2600\uFE0F
+        Wishing you a bright and joyful day!\\\" \u2013 but that's still two parts.
+        Wait, maybe \\\"Hello there! \u2600\uFE0F Wishing you a bright and joyful
+        day!\\\" is one sentence if it's structured correctly. Or perhaps \\\"Have
+        a wonderful day! \U0001F31E \U0001F60A\\\" That's shorter and more to the
+        point.\\n\\nAlternatively, \\\"Hi there! Let\u2019s make today amazing! \U0001F31F\\\"
+        That adds some energy. Maybe include something about sunshine or smiles. Let
+        me check for flow and positivity. The key is to be cheerful without being
+        too over the top. I think \\\"Hello there! \u2600\uFE0F Wishing you a bright
+        and joyful day!\\\" works, but maybe \\\"Hello there! Let\u2019s make today
+        amazing! \U0001F31F\\\" is more engaging. Or \\\"Hi there! Have a wonderful
+        day! \U0001F31E \U0001F60A\\\" \u2013 that's simple and includes emojis.\\n\\nI
+        should choose the one that's most cheerful and concise. Maybe go with \\\"Hi
+        there! Have a wonderful day! \U0001F31E \U0001F60A\\\" because it's straightforward
+        and includes two emojis to convey joy.\\n</think>\\n\\n\\\"Hi there! Have
+        a wonderful day! \U0001F31E \U0001F60A\\\"\",\n        \"tool_calls\": []\n
+        \     },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n
+        \ ],\n  \"usage\": {\n    \"prompt_tokens\": 17,\n    \"completion_tokens\":
+        348,\n    \"total_tokens\": 365\n  },\n  \"stats\": {\n    \"tokens_per_second\":
+        73.16204025383864,\n    \"time_to_first_token\": 0.446,\n    \"generation_time\":
+        4.756,\n    \"stop_reason\": \"eosFound\"\n  },\n  \"model_info\": {\n    \"arch\":
+        \"qwen3\",\n    \"quant\": \"Q4_K_M\",\n    \"format\": \"gguf\",\n    \"context_length\":
+        4096\n  },\n  \"runtime\": {\n    \"name\": \"llama.cpp-mac-arm64-apple-metal-advsimd\",\n
+        \   \"version\": \"1.59.0\",\n    \"supported_formats\": [\n      \"gguf\"\n
+        \   ]\n  }\n}"
+    headers:
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '2397'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 03 Dec 2025 09:25:06 GMT
+      ETag:
+      - W/"95d-bBF/XWNFTKQQfM0K/hCw3w9RBWk"
+      Keep-Alive:
+      - timeout=5
+      X-Powered-By:
+      - Express
+    status:
+      code: 200
+      message: OK
+version: 1
