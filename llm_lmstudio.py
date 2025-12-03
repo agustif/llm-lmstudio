@@ -10,7 +10,13 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import (
+    Any,
+    AsyncGenerator,
+    Iterable,
+    Iterator,
+    cast,
+)
 from urllib.parse import urlparse
 
 import httpx
@@ -32,11 +38,11 @@ LLM_LMSTUDIO_TTL = os.getenv("LLM_LMSTUDIO_TTL")
 # --------------------------------------------------------------------------- #
 #  Internal helpers                                                           #
 # --------------------------------------------------------------------------- #
-_cache: Dict[str, tuple[List[Dict[str, Any]], str]] = {}
-_errors: Dict[str, Exception] = {}
+_cache: dict[str, tuple[list[dict[str, Any]], str]] = {}
+_errors: dict[str, Exception] = {}
 
 
-def _fetch_models(base: str) -> tuple[List[Dict[str, Any]], str]:
+def _fetch_models(base: str) -> tuple[list[dict[str, Any]], str]:
     """Return cached metadata and API path prefix for one LM Studio server."""
     if base in _cache:
         return _cache[base]
@@ -248,7 +254,7 @@ def register_embedding_models(register):
 # --------------------------------------------------------------------------- #
 #  Model classes                                                              #
 # --------------------------------------------------------------------------- #
-class LMStudioBaseModel(llm.Model):
+class LMStudioBaseModel:
     """Base class for common LMStudio model attributes."""
 
     can_stream: bool = True
@@ -260,16 +266,6 @@ class LMStudioBaseModel(llm.Model):
         "image/webp",
     }
 
-
-class LMStudioModel(LMStudioBaseModel):
-    """Chat/completion model class."""
-
-    class Options(llm.Options):
-        temperature: Optional[float] = Field(None, description="Sampling temperature")
-        top_p: Optional[float] = Field(None, description="Nucleus sampling")
-        max_tokens: Optional[int] = Field(None, description="Maximum tokens")
-        stop: Optional[List[str]] = Field(None, description="Stop sequences")
-
     def __init__(
         self,
         model_id: str,
@@ -278,17 +274,23 @@ class LMStudioModel(LMStudioBaseModel):
         api_path_prefix: str,
         *,
         supports_images: bool = False,
-        metadata: dict = None,
+        metadata: dict | None = None,
         display_suffix: str = "",
     ):
-        self.model_id = model_id  # This is the clean ID for lookup
+        self.model_id = model_id
         self.raw_id = raw_id
         self.base = base_url
         self.api_path_prefix = api_path_prefix
         self.supports_images = supports_images
         self.metadata = metadata or {}
         self.supports_schema = True
-        self.display_suffix = display_suffix  # Store the suffix for __str__
+        self.display_suffix = display_suffix
+
+    class Options(llm.Options):
+        temperature: float | None = Field(None, description="Sampling temperature")
+        top_p: float | None = Field(None, description="Nucleus sampling")
+        max_tokens: int | None = Field(None, description="Maximum tokens")
+        stop: list[str] | None = Field(None, description="Stop sequences")
 
     def __str__(self):
         """Return the model ID with its display suffix for listings."""
@@ -500,7 +502,7 @@ class LMStudioModel(LMStudioBaseModel):
     # --------------------------------------------------------------------- #
     #  Prompt helpers                                                       #
     # --------------------------------------------------------------------- #
-    def _encode_tools(self, tools: List[llm.Tool]) -> List[dict]:
+    def _encode_tools(self, tools: list[llm.Tool]) -> list[dict]:
         """Convert llm.Tool objects to LM Studio tools format."""
         encoded_tools = []
         for tool in tools:
@@ -516,7 +518,7 @@ class LMStudioModel(LMStudioBaseModel):
             )
         return encoded_tools
 
-    def _encode_tool_results(self, tool_results: List[llm.ToolResult]) -> List[dict]:
+    def _encode_tool_results(self, tool_results: list[llm.ToolResult]) -> list[dict]:
         """Convert llm.ToolResult objects to LM Studio message format."""
         messages = []
         for result in tool_results:
@@ -529,53 +531,8 @@ class LMStudioModel(LMStudioBaseModel):
             )
         return messages
 
-    def _encode_attachments(self, prompt: llm.Prompt) -> List[dict]:
-        """Encode attachments from the prompt using llm.Attachment API."""  # Task 1.2
-        encoded_attachments = []
-        if not prompt.attachments:
-            return encoded_attachments
-
-        for attachment in prompt.attachments:
-            # Only process attachments if the model supports images
-            # and the attachment type is one of the supported image types.
-            # llm CLI should have already filtered by attachment_types,
-            # but this is an additional safeguard.
-            if self.supports_images:
-                try:
-                    resolved_type = attachment.resolve_type()
-                    if resolved_type in self.attachment_types:
-                        base64_content = attachment.base64_content()
-                        data_uri = f"data:{resolved_type};base64,{base64_content}"
-                        encoded_attachments.append(
-                            {"type": "image_url", "image_url": {"url": data_uri}}
-                        )
-                        if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                            print(
-                                f"LMSTUDIO DEBUG: Encoded image attachment: {attachment.path or attachment.url or 'content'} as {resolved_type}.",
-                                file=sys.stderr,
-                            )
-                    elif os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                        print(
-                            f"LMSTUDIO DEBUG: Attachment type {resolved_type} not in model's supported image types. Skipping {attachment.path or attachment.url or 'content'}.",
-                            file=sys.stderr,
-                        )
-
-                except Exception as e:
-                    print(
-                        f"LMSTUDIO WARN: Could not process attachment {attachment.path or attachment.url or 'content'}: {e}. Skipping.",
-                        file=sys.stderr,
-                    )
-            elif (
-                os.getenv("LLM_LMSTUDIO_DEBUG") == "1"
-            ):  # Model does not support images but attachments present
-                print(
-                    f"LMSTUDIO DEBUG: Model {self.model_id} does not support images, but attachment {attachment.path or attachment.url or 'content'} was provided. Ignoring.",
-                    file=sys.stderr,
-                )
-        return encoded_attachments
-
-    def _build_messages(self, prompt: llm.Prompt, conversation) -> List[dict]:
-        msgs: List[dict] = []
+    def _build_messages(self, prompt: llm.Prompt, conversation) -> list[dict]:
+        msgs: list[dict] = []
         if prompt.system:
             msgs.append({"role": "system", "content": prompt.system})
 
@@ -703,6 +660,68 @@ class LMStudioModel(LMStudioBaseModel):
                 )
 
         return msgs
+
+    def _encode_attachments(self, prompt: llm.Prompt) -> list[dict]:
+        """Encode attachments from the prompt using llm.Attachment API."""  # Task 1.2
+        encoded_attachments = []
+        if not prompt.attachments:
+            return encoded_attachments
+
+        for attachment in prompt.attachments:
+            # Only process attachments if the model supports images
+            # and the attachment type is one of the supported image types.
+            # llm CLI should have already filtered by attachment_types,
+            # but this is an additional safeguard.
+            if self.supports_images:
+                try:
+                    resolved_type = attachment.resolve_type()
+                    if resolved_type in self.attachment_types:
+                        base64_content = attachment.base64_content()
+                        data_uri = f"data:{resolved_type};base64,{base64_content}"
+                        encoded_attachments.append(
+                            {"type": "image_url", "image_url": {"url": data_uri}}
+                        )
+                        if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                            print(
+                                f"LMSTUDIO DEBUG: Encoded image attachment: {attachment.path or attachment.url or 'content'} as {resolved_type}.",
+                                file=sys.stderr,
+                            )
+                    elif os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                        print(
+                            f"LMSTUDIO DEBUG: Attachment type {resolved_type} not in model's supported image types. Skipping {attachment.path or attachment.url or 'content'}.",
+                            file=sys.stderr,
+                        )
+
+                except Exception as e:
+                    print(
+                        f"LMSTUDIO WARN: Could not process attachment {attachment.path or attachment.url or 'content'}: {e}. Skipping.",
+                        file=sys.stderr,
+                    )
+            elif (
+                os.getenv("LLM_LMSTUDIO_DEBUG") == "1"
+            ):  # Model does not support images but attachments present
+                print(
+                    f"LMSTUDIO DEBUG: Model {self.model_id} does not support images, but attachment {attachment.path or attachment.url or 'content'} was provided. Ignoring.",
+                    file=sys.stderr,
+                )
+        return encoded_attachments
+
+    def _clean_thinking_tags(self, text: str) -> str:
+        """Remove <think>...</think> tags from model output."""
+        if not text:
+            return text
+
+        import re
+
+        # Remove everything between <think> and </think> tags (including newlines)
+        cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        # Clean up extra whitespace and newlines
+        cleaned = re.sub(r"\n\s*\n+", "\n", cleaned.strip())
+        return cleaned
+
+
+class LMStudioModel(LMStudioBaseModel, llm.Model):
+    """Chat/completion model class."""
 
     # --------------------------------------------------------------------- #
     #  Execute                                                              #
@@ -979,181 +998,17 @@ class LMStudioModel(LMStudioBaseModel):
                 response.set_content(cleaned_content)
         # --- End Debug ---
 
-    def _clean_thinking_tags(self, text: str) -> str:
-        """Remove <think>...</think> tags from model output."""
-        if not text:
-            return text
-
-        import re
-
-        # Remove everything between <think> and </think> tags (including newlines)
-        cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-        # Clean up extra whitespace and newlines
-        cleaned = re.sub(r"\n\s*\n+", "\n", cleaned.strip())
-        return cleaned
-
 
 # ------------------------  Async Model  ------------------------------------ #
-class LMStudioAsyncModel(llm.AsyncModel):
+class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
     """Async version of the chat/completion model class."""
-
-    can_stream: bool = True
-    attachment_types = {  # Task 1.1
-        "image/png",
-        "image/jpeg",
-        "image/gif",
-        "image/webp",
-    }
-
-    class Options(LMStudioModel.Options):
-        # Inherit options from the sync version
-        pass
-
-    def __init__(
-        self,
-        model_id: str,
-        base_url: str,
-        raw_id: str,
-        api_path_prefix: str,
-        *,
-        supports_images: bool = False,
-        metadata: dict = None,
-        display_suffix: str = "",
-    ):
-        self.model_id = model_id  # Clean ID
-        self.raw_id = raw_id
-        self.base = base_url
-        self.api_path_prefix = api_path_prefix
-        self.supports_images = supports_images
-        self.metadata = metadata or {}
-        self.supports_schema = True
-        self.display_suffix = display_suffix  # Store for __str__
-
-    def __str__(self):
-        """Return the model ID with its display suffix for listings."""
-        return f"{self.model_id}{self.display_suffix}"
-
-    def inspect(self):
-        """Return model metadata for the 'llm inspect' command."""
-        return self.metadata
-
-    # Async Check/Load Helpers (using sync versions for now, could be made async)
-    def _is_model_loaded(self) -> bool:
-        # NOTE: For simplicity, re-using the synchronous check.
-        # A fully async implementation might use httpx here.
-        # This might require creating a sync LMStudioModel instance temporarily or refactoring _is_model_loaded.
-        # For now, keeping it simple.
-        sync_model = LMStudioModel(
-            self.model_id,
-            self.base,
-            self.raw_id,
-            self.api_path_prefix,
-            supports_images=self.supports_images,
-            metadata=self.metadata,
-        )
-        return sync_model._is_model_loaded()
-
-    def _attempt_load_model(self):
-        # NOTE: Re-using the synchronous load attempt.
-        sync_model = LMStudioModel(
-            self.model_id,
-            self.base,
-            self.raw_id,
-            self.api_path_prefix,
-            supports_images=self.supports_images,
-            metadata=self.metadata,
-        )
-        return sync_model._attempt_load_model()
-
-    def _encode_tools(self, tools: List[llm.Tool]) -> List[dict]:
-        """Convert llm.Tool objects to LM Studio tools format."""
-        encoded_tools = []
-        for tool in tools:
-            encoded_tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": tool.input_schema,
-                    },
-                }
-            )
-        return encoded_tools
-
-    def _encode_tool_results(self, tool_results: List[llm.ToolResult]) -> List[dict]:
-        """Convert llm.ToolResult objects to LM Studio message format."""
-        messages = []
-        for result in tool_results:
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": result.tool_call_id,
-                    "content": result.output,
-                }
-            )
-        return messages
-
-    def _encode_attachments(self, prompt: llm.Prompt) -> List[dict]:
-        """Encode attachments from the prompt using llm.Attachment API."""  # Task 1.2 (mirrors sync version)
-        encoded_attachments = []
-        if not prompt.attachments:
-            return encoded_attachments
-
-        for attachment in prompt.attachments:
-            if self.supports_images:
-                try:
-                    resolved_type = attachment.resolve_type()
-                    if resolved_type in self.attachment_types:
-                        base64_content = attachment.base64_content()
-                        data_uri = f"data:{resolved_type};base64,{base64_content}"
-                        encoded_attachments.append(
-                            {"type": "image_url", "image_url": {"url": data_uri}}
-                        )
-                        if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                            print(
-                                f"LMSTUDIO DEBUG: Encoded image attachment (async): {attachment.path or attachment.url or 'content'} as {resolved_type}.",
-                                file=sys.stderr,
-                            )
-                    elif os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                        print(
-                            f"LMSTUDIO DEBUG: Attachment type {resolved_type} not in model's supported image types (async). Skipping {attachment.path or attachment.url or 'content'}.",
-                            file=sys.stderr,
-                        )
-                except Exception as e:
-                    print(
-                        f"LMSTUDIO WARN: Could not process attachment (async) {attachment.path or attachment.url or 'content'}: {e}. Skipping.",
-                        file=sys.stderr,
-                    )
-            elif os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                print(
-                    f"LMSTUDIO DEBUG: Model {self.model_id} does not support images, but attachment (async) {attachment.path or attachment.url or 'content'} was provided. Ignoring.",
-                    file=sys.stderr,
-                )
-        return encoded_attachments
-
-    def _build_messages(self, prompt: llm.Prompt, conversation) -> List[dict]:
-        # For async, we will call the synchronous _build_messages for now.
-        # This is because _encode_attachments within it is synchronous due to llm.Attachment API.
-        # If llm.Attachment provided async methods, this could be fully async.
-        # Create a temporary sync model instance to call its _build_messages.
-        # This is not ideal but avoids duplicating complex logic unneccessarily until llm.Attachment is async.
-        sync_model_instance = LMStudioModel(
-            model_id=self.model_id,
-            base_url=self.base,
-            raw_id=self.raw_id,
-            api_path_prefix=self.api_path_prefix,
-            supports_images=self.supports_images,
-            metadata=self.metadata,
-        )
-        return sync_model_instance._build_messages(prompt, conversation)
 
     async def execute(
         self,
         prompt: llm.Prompt,
         stream: bool,
-        response: llm.Response,
-        conversation=None,
+        response: llm.AsyncResponse,
+        conversation: llm.AsyncConversation | None,
     ) -> AsyncGenerator[str, None]:
         # --- Auto-loading Logic (using sync helper) ---
         if not self._is_model_loaded():
@@ -1391,16 +1246,17 @@ class LMStudioEmbeddingModel(llm.EmbeddingModel):
         self.base = base_url
         self.api_path_prefix = api_path_prefix
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, items: Iterable[str | bytes]) -> Iterator[list[float]]:
         try:
             r = requests.post(
                 f"{self.base}{self.api_path_prefix}/embeddings",
-                json={"model": self.raw_id, "input": texts},
+                json={"model": self.raw_id, "input": items},
                 timeout=TIMEOUT,
             )
             r.raise_for_status()
             data = r.json()
-            return [item["embedding"] for item in data["data"]]
+
+            return (cast(list[float], item["embedding"]) for item in data["data"])
         except requests.RequestException as e:
             raise llm.ModelError(f"LM Studio embeddings request failed: {e}")
         except Exception as e:
