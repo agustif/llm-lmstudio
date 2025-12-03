@@ -6,13 +6,12 @@ This directory contains test files for the llm-lmstudio plugin.
 
 ### Core Plugin Tests
 
-- `test_llm_lmstudio.py` - Basic sync functionality tests
-- `test_llm_lmstudio_async.py` - Async functionality tests
+- `test_sync.py` - Exercises synchronous message building, attachments, and tool handling
+- `test_async.py` - Covers async execution helpers and streaming support
 
-### Enhanced Features Tests  
+### Integration Tests  
 
-- `test_thinking_analysis.py` - Tests for thinking tag handling with qwen models
-- `test_timeout_handling.py` - Tests for enhanced timeout handling with tools
+- `test_end_to_end.py` - Smoke tests that run the plugin through llm’s end-to-end interface
 
 ## Running Tests
 
@@ -25,16 +24,12 @@ pytest tests/
 ### Run specific test files
 
 ```bash
-pytest tests/test_llm_lmstudio.py
-pytest tests/test_thinking_analysis.py
+pytest tests/test_sync.py
+pytest tests/test_async.py
+pytest tests/test_end_to_end.py
 ```
 
-### Run with timeout testing
 
-```bash
-# Set timeout for timeout handling tests
-LMSTUDIO_TIMEOUT=15 pytest tests/test_timeout_handling.py
-```
 
 ## Requirements
 
