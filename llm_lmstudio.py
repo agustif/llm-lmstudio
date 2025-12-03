@@ -4,17 +4,18 @@ Requires llm >= 0.23 (attachments API) and LM Studio ≥ 0.3.6 for /api/v0/model
 """
 
 from __future__ import annotations
+
 import json
 import os
+import subprocess
 import sys
 import time
-import subprocess
-from typing import List, Optional, Dict, Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, List, Optional
 from urllib.parse import urlparse
 
-import requests
 import httpx
 import llm
+import requests
 from pydantic import Field
 
 # --------------------------------------------------------------------------- #
@@ -352,7 +353,16 @@ class LMStudioModel(LMStudioBaseModel):
         try:
             # Assume the first server is the first server to load the model from
             server = urlparse(SERVER_LIST[0])
-            lms_load_cmd = ["lms", "load", "--exact", self.raw_id, "--host", server.hostname, "--port", str(server.port)]
+            lms_load_cmd = [
+                "lms",
+                "load",
+                "--exact",
+                self.raw_id,
+                "--host",
+                server.hostname,
+                "--port",
+                str(server.port),
+            ]
             if LLM_LMSTUDIO_TTL is not None:
                 lms_load_cmd = lms_load_cmd + ["--ttl", LLM_LMSTUDIO_TTL]
             if debug_enabled:
