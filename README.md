@@ -30,7 +30,7 @@ Once the server is up, the plugin should automatically find the models you have 
 ```bash
 llm models list
 ```
-You should see your LMStudio models listed, likely prefixed with `lmstudio/` (e.g., `LMStudio: lmstudio/llava-v1.5-7b`).
+You should see your LMStudio models listed, prefixed with `lmstudio/` (e.g., `lmstudio/llava-v1.5-7b`).
 
 To run a prompt against a model:
 
@@ -62,6 +62,18 @@ The plugin supports vision-language models (VLMs).
 - The plugin will encode the image and send it to the model.
 - This feature's success depends on the specific VLM, its configuration in LM Studio, and LM Studio's API correctly handling image data.
 - Models that support vision may have a `👁️` (eye icon) in their `display_suffix` when inspected via `llm inspect -m lmstudio/your-vlm-id`, though this may not always render in `llm models list`.
+
+### Tool Support
+
+Some models loaded in LMStudio can call tools. The plugin will surface those tool invocations and their results when interacting with such models.
+
+Example:
+
+```bash
+$ llm --tool llm_version "What version of LLM is this?" --td
+```
+
+For more information about tool calling support consult [the llm documentation on tools](https://llm.datasette.io/en/stable/tools.html).
 
 ### Embedding Models
 
