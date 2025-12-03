@@ -1,4 +1,6 @@
 import io
+import json
+from types import SimpleNamespace
 from typing import List, Optional
 from unittest.mock import MagicMock, patch
 
@@ -352,6 +354,208 @@ def test_build_messages_conversation_history_with_image(
     # No specific stderr output is expected in this test case for successful VLM processing
     # captured = capsys.readouterr() # Ensure no unexpected warnings/errors if needed for debugging
     # assert captured.err == "" # Example if strictly no stderr is expected
+
+
+def test_encode_tools_produces_function_payload(vlm_model):
+    tools = [
+        llm.Tool(
+            name="get_current_time",
+            description="Return the current time.",
+            input_schema={"type": "object", "properties": {}, "required": []},
+        ),
+        llm.Tool(
+            name="get_weather",
+            description="Return mock weather for a city.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City name to inspect",
+                    }
+                },
+                "required": ["location"],
+            },
+        ),
+    ]
+
+    encoded = vlm_model._encode_tools(tools)
+
+    assert encoded == [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Return the current time.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Return mock weather for a city.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "City name to inspect",
+                        }
+                    },
+                    "required": ["location"],
+                },
+            },
+        },
+    ]
+
+
+def test_build_messages_includes_tool_calls_from_history(
+    vlm_model, mock_prompt_factory
+):
+    conversation = MagicMock()
+    prev_prompt = mock_prompt_factory(prompt_text="Please look up the weather.")
+    prev_response = MagicMock()
+    prev_response.prompt = prev_prompt
+    prev_response.text_or_raise = MagicMock(return_value="Calling get_weather now.")
+    tool_call = llm.ToolCall(
+        name="get_weather",
+        arguments={"location": "Berlin"},
+        tool_call_id="call_weather_1",
+    )
+    prev_response.tool_calls_or_raise = MagicMock(return_value=[tool_call])
+    conversation.responses = [prev_response]
+
+    current_prompt = mock_prompt_factory(prompt_text="Thanks!")
+
+    messages = vlm_model._build_messages(current_prompt, conversation=conversation)
+
+    assistant_message = next(msg for msg in messages if msg["role"] == "assistant")
+    assert assistant_message["content"] == "Calling get_weather now."
+    assert "tool_calls" in assistant_message
+    assert assistant_message["tool_calls"][0]["id"] == "call_weather_1"
+    assert assistant_message["tool_calls"][0]["function"]["name"] == "get_weather"
+    assert (
+        assistant_message["tool_calls"][0]["function"]["arguments"]
+        == '{"location": "Berlin"}'
+    )
+
+
+def test_build_messages_includes_current_tool_results(vlm_model, mock_prompt_factory):
+    prompt = mock_prompt_factory(prompt_text="Here are the results.")
+    prompt.tool_results = [
+        llm.ToolResult(
+            name="get_current_time", tool_call_id="call_time_1", output="10:15"
+        )
+    ]
+
+    messages = vlm_model._build_messages(prompt, conversation=None)
+
+    assert messages[0]["role"] == "tool"
+    assert messages[0]["tool_call_id"] == "call_time_1"
+    assert messages[0]["content"] == "10:15"
+    assert messages[1]["role"] == "user"
+    assert messages[1]["content"][0]["type"] == "text"
+    assert messages[1]["content"][0]["text"] == "Here are the results."
+
+
+def test_execute_handles_tool_call_response(monkeypatch, vlm_model):
+    monkeypatch.setattr(
+        llm_lmstudio.LMStudioModel, "_is_model_loaded", lambda self: True
+    )
+
+    api_response = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_weather_123",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location": "Berlin"}',
+                            },
+                        }
+                    ],
+                },
+            }
+        ],
+        "usage": {"prompt_tokens": 42, "completion_tokens": 5},
+    }
+
+    class FakePostResponse:
+        def __init__(self, payload):
+            self._payload = payload
+            self.text = json.dumps(payload)
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    last_request = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        last_request["url"] = url
+        last_request["json"] = json
+        return FakePostResponse(api_response)
+
+    monkeypatch.setattr(llm_lmstudio.requests, "post", fake_post)
+
+    tools = [
+        llm.Tool(
+            name="get_weather",
+            description="Return mock weather for a city.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City to inspect",
+                    }
+                },
+                "required": ["location"],
+            },
+        )
+    ]
+
+    prompt = SimpleNamespace(
+        prompt="Please check the weather in Berlin.",
+        attachments=[],
+        system=None,
+        options=None,
+        schema=None,
+        tools=tools,
+        tool_results=[],
+    )
+
+    response = MagicMock(spec=llm.Response)
+
+    result = list(
+        vlm_model.execute(
+            prompt=prompt,
+            stream=False,
+            response=response,
+            conversation=None,
+        )
+    )
+
+    assert result == [""]
+    response.add_tool_call.assert_called_once()
+    tool_call_arg = response.add_tool_call.call_args[0][0]
+    assert tool_call_arg.name == "get_weather"
+    assert tool_call_arg.arguments == {"location": "Berlin"}
+    assert tool_call_arg.tool_call_id == "call_weather_123"
+    response.set_usage.assert_called_once_with(input=42, output=5)
+
+    sent_tools = last_request["json"]["tools"]
+    assert sent_tools[0]["function"]["name"] == "get_weather"
+    assert sent_tools[0]["function"]["parameters"]["required"] == ["location"]
+    final_message = last_request["json"]["messages"][-1]
+    assert final_message["content"][0]["text"] == "Please check the weather in Berlin."
 
 
 def test_system_prompt_in_build_messages(vlm_model, mock_prompt_factory):

@@ -1,10 +1,13 @@
 import json
 import logging
 import os
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import llm
 import pytest
+
+import llm_lmstudio
 
 # Mark all tests in this file as asyncio
 pytestmark = pytest.mark.asyncio
@@ -171,3 +174,117 @@ async def test_async_prompt_schema(mock_fetch_list, mock_is_loaded):
     except Exception:
         # print(f"DEBUG: test_async_prompt_schema EXCEPTION: {e}") # Removed diagnostic
         raise
+
+
+async def test_async_execute_handles_tool_call_response(monkeypatch):
+    monkeypatch.setattr(
+        llm_lmstudio.LMStudioAsyncModel, "_is_model_loaded", lambda self: True
+    )
+
+    api_response = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_weather_async",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location": "Berlin"}',
+                            },
+                        }
+                    ],
+                },
+            }
+        ],
+        "usage": {"prompt_tokens": 33, "completion_tokens": 7},
+    }
+
+    class FakeAsyncResponse:
+        def __init__(self, payload):
+            self._payload = payload
+            self.text = json.dumps(payload)
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    last_request = {}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json=None):
+            last_request["url"] = url
+            last_request["json"] = json
+            return FakeAsyncResponse(api_response)
+
+    monkeypatch.setattr(llm_lmstudio.httpx, "AsyncClient", FakeAsyncClient)
+
+    async_model = llm_lmstudio.LMStudioAsyncModel(
+        model_id="lmstudio/test",
+        base_url="http://localhost:1234",
+        raw_id="test-model",
+        api_path_prefix="/api/v0",
+    )
+
+    tools = [
+        llm.Tool(
+            name="get_weather",
+            description="Return mock weather for a city.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City to inspect",
+                    }
+                },
+                "required": ["location"],
+            },
+        )
+    ]
+
+    prompt = SimpleNamespace(
+        prompt="Please check the weather in Berlin.",
+        attachments=[],
+        system=None,
+        options=None,
+        schema=None,
+        tools=tools,
+        tool_results=[],
+    )
+
+    response = MagicMock()
+
+    result = [
+        chunk
+        async for chunk in async_model.execute(
+            prompt=prompt, stream=False, response=response, conversation=None
+        )
+    ]
+
+    assert result == [""]
+    response.add_tool_call.assert_called_once()
+    added_call = response.add_tool_call.call_args[0][0]
+    assert added_call.name == "get_weather"
+    assert added_call.arguments == {"location": "Berlin"}
+    assert added_call.tool_call_id == "call_weather_async"
+    response.set_usage.assert_called_once_with(input=33, output=7)
+
+    sent_tools = last_request["json"]["tools"]
+    assert sent_tools[0]["function"]["name"] == "get_weather"
+    assert sent_tools[0]["function"]["parameters"]["required"] == ["location"]
+    final_message = last_request["json"]["messages"][-1]
+    assert final_message["content"][0]["text"] == "Please check the weather in Berlin."
