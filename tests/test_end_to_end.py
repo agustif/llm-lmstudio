@@ -13,7 +13,7 @@ import llm
 import pytest
 
 import llm_lmstudio
-from llm_lmstudio import LMStudioModel
+from llm_lmstudio import LMStudioAsyncModel, LMStudioModel
 
 logging.basicConfig()
 vcr_logger = logging.getLogger("vcr")
@@ -52,10 +52,42 @@ def test_lmstudio_sync_prompt_round_trip():
     assert response is not None, "plugin prompt() should return a response object"
 
     text = response.text()
+    assert "Hi there! Have a wonderful day!" in text
     assert isinstance(text, str), "response.text() should return a string"
     assert text.strip(), "Model returned empty response text"
 
     usage = response.usage()
+    assert hasattr(usage, "input"), "Usage metadata missing 'input'"
+    assert hasattr(usage, "output"), "Usage metadata missing 'output'"
+
+    # Ensure the metadata looks reasonable (non-negative token counts, if provided)
+    if usage.input is not None:
+        assert usage.input >= 0
+    if usage.output is not None:
+        assert usage.output >= 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="once")
+async def test_lmstudio_async_prompt_round_trip():
+    model_id = os.getenv("LMSTUDIO_TEST_MODEL_ID", "lmstudio/qwen3-4b")
+    prompt_text = "Give me a cheerful greeting in one sentence."
+
+    model = llm.get_async_model(model_id)
+    assert model is not None, f"Model '{model_id}' was not registered"
+    assert isinstance(model, LMStudioAsyncModel), (
+        "Retrieved async model is not provided by the LM Studio plugin"
+    )
+
+    response = await model.prompt(prompt_text, stream=False)
+    assert response is not None, "plugin prompt() should return a response object"
+
+    text = await response.text()
+    assert "Have a day as bright and cheerful as the morning sun!" in text
+    assert isinstance(text, str), "response.text() should return a string"
+    assert text.strip(), "Model returned empty response text"
+
+    usage = await response.usage()
     assert hasattr(usage, "input"), "Usage metadata missing 'input'"
     assert hasattr(usage, "output"), "Usage metadata missing 'output'"
 
