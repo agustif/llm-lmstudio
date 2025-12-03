@@ -706,19 +706,6 @@ class LMStudioBaseModel:
                 )
         return encoded_attachments
 
-    def _clean_thinking_tags(self, text: str) -> str:
-        """Remove <think>...</think> tags from model output."""
-        if not text:
-            return text
-
-        import re
-
-        # Remove everything between <think> and </think> tags (including newlines)
-        cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-        # Clean up extra whitespace and newlines
-        cleaned = re.sub(r"\n\s*\n+", "\n", cleaned.strip())
-        return cleaned
-
 
 class LMStudioModel(LMStudioBaseModel, llm.Model):
     """Chat/completion model class."""
@@ -985,18 +972,6 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
             yield text
 
         # --- End Process Response --- #
-
-        # --- Debug: Clean thinking tags from response content ---
-        if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-            # Only attempt to clean if the feature flag is set
-            cleaned_content = self._clean_thinking_tags(response.content)
-            if cleaned_content != response.content:
-                print(
-                    "LMSTUDIO DEBUG: Cleaned thinking tags from response content.",
-                    file=sys.stderr,
-                )
-                response.set_content(cleaned_content)
-        # --- End Debug ---
 
 
 # ------------------------  Async Model  ------------------------------------ #
