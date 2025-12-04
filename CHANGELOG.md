@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.0 - 2025-12-03
+
+### Added
+- Full tool-calling support in both sync and async flows, including encoding of `prompt.tools`, replaying prior tool results, and surfacing streamed tool invocations back through `llm.Response`.
+- `shell.nix` based setup of development environment
+- End to end tests to validate plugin.
+
+### Changed
+- All discovered LM Studio models are now registered as `lmstudio/<model_id>` (or `lmstudio@host/...` when multiple servers are configured) so CLI usage is consistent across environments.
+- Migrated the package to a `src/` layout, added an explicit `[build-system]` table, generated a pinned `uv.lock`, refreshed README instructions to favor `uv run --all-extras pytest`.
+
+### Fixed
+- Automatic `lms load` calls now pass `--exact`, `--host`, `--port` from  `LMSTUDIO_API_BASE`, and optional `--ttl $LLM_LMSTUDIO_TTL`, show clearer progress, and use longer timeouts to make cold starts and long responses more reliable.
+
+### Breaking Changes
+- Raised `requires-python` to `>=3.10`, dropping support for Python 3.8 and 3.9 as [3.9 has reached end of life by by 2025-10-31](https://endoflife.date/python).
+- Scripts referencing bare LM Studio IDs must be updated to the new `lmstudio/...` prefix format.
+
 ## v0.1.0 - 2025-05-07
 
 ### Added
@@ -26,4 +44,4 @@
 - Updated README with improved installation instructions, usage examples, vision support details, configuration, and a development section including VCR cassette generation.
 
 ### Known Issues
-- Icons in `display_suffix` may not render correctly in all terminals when using `llm models list` but are usually visible with `llm inspect`. 
+- Icons in `display_suffix` may not render correctly in all terminals when using `llm models list` but are usually visible with `llm inspect`.
