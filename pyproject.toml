@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "LLM plugin for models served by LMStudio (local LLM studio HTTP API)"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Agusti" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 dependencies = [
     "llm>=0.23",      # Ensure a recent version of the LLM CLI library
