@@ -22,8 +22,8 @@ Changelog = "https://github.com/agustif/llm-lmstudio/releases"
 [project.entry-points.llm]
 lmstudio = "llm_lmstudio"
 
-[project.optional-dependencies]
-test = [
+[dependency-groups]
+dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-mock",

@@ -325,8 +325,8 @@ dependencies = [
     { name = "requests" },
 ]
 
-[package.optional-dependencies]
-test = [
+[package.dev-dependencies]
+dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-mock" },
@@ -337,13 +337,16 @@ test = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.20" },
     { name = "llm", specifier = ">=0.23" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-asyncio", marker = "extra == 'test'" },
-    { name = "pytest-mock", marker = "extra == 'test'" },
-    { name = "pytest-vcr", marker = "extra == 'test'" },
     { name = "requests", specifier = ">=2.0" },
 ]
-provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-mock" },
+    { name = "pytest-vcr" },
+]
 
 [[package]]
 name = "multidict"

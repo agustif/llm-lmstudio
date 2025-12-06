@@ -122,18 +122,18 @@ If a selected model is not currently loaded in LM Studio, the plugin will attemp
 
 To set up this plugin for development:
 1. Clone the repository.
-2. Run tests `uv run --all-extras pytest`
+2. Run tests `uv run pytest`
 
 Or do the classic complicated dance:
 1. Create a virtual environment: `python -m venv .venv`
 2. Activate it: `source .venv/bin/activate`
-3. Install dependencies, including test dependencies: `pip install -e ".[test]"`
-4. Run tests: `pytest` or `PYTHONPATH=. pytest -v`
+3. Install dependencies, including dev dependencies: `pip install -e . --group dev
+4. Run tests: `pytest`
 
-The asynchronous tests in `tests/test_llm_lmstudio_async.py` use `pytest-vcr` to record and replay HTTP interactions with the LM Studio server. To record new cassettes:
+The asynchronous tests in `tests/test_llm_lmstudio_async.py` (among others) use `pytest-vcr` to record and replay HTTP interactions with the LM Studio server. To record new cassettes:
 1. Ensure LM Studio is running with the target model(s) loaded (e.g., `llava-v1.5-7b`).
 2. Temporarily set `record_mode='all'` in the `@pytest.mark.vcr` decorator for the relevant tests in `tests/test_llm_lmstudio_async.py`.
-3. Run `PYTHONPATH=. pytest -v -s tests/test_llm_lmstudio_async.py`.
+3. Run `pytest -v -s tests/test_llm_lmstudio_async.py`.
 4. Cassettes will be saved in `tests/cassettes/`.
 5. **Important:** Change `record_mode` back to `'once'` after recording.
 6. Commit the new/updated cassettes.
