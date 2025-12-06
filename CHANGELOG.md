@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.1 - 2025-12-06
+
+### Changed
+- If LM Studio is not running, only show a warning about that when `LLM_LMSTUDIO_DEBUG=1`. This allows having the plugin installed even if you do not use LM Studio models all the time.
+
 ## v0.2.0 - 2025-12-03
 
 ### Added

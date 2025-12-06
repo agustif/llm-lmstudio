@@ -226,10 +226,10 @@ def register_models(register):
                     display_suffix=display_suffix,
                 ),
             )
-    if _errors:
+    if _errors and os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
         print(
-            "Warning: Some LM Studio servers were unreachable:\\n  "
-            + "\\n  ".join(f"{k}: {v}" for k, v in _errors.items()),
+            "Warning: Some LM Studio servers were unreachable:\n  "
+            + "\n  ".join(f"{k}: {v}" for k, v in _errors.items()),
             file=sys.stderr,
         )
 
