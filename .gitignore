@@ -7,6 +7,7 @@ dist/
 build/
 wheels/
 *.egg
+uv.lock
 
 # Virtual environment
 .venv/
