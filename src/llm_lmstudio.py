@@ -824,6 +824,8 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
         # Set stream value in payload *after* potential override
         if stream:
             payload["stream"] = True
+            # LM Studio only sends the final usage chunk if we ask for it
+            payload["stream_options"] = {"include_usage": True}
         else:
             # Ensure stream: false is explicitly set if needed
             payload["stream"] = False
@@ -1054,6 +1056,8 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
 
         if stream:
             payload["stream"] = True
+            # LM Studio only sends the final usage chunk if we ask for it
+            payload["stream_options"] = {"include_usage": True}
         else:
             payload["stream"] = False
         # --- End Prepare Payload ---
