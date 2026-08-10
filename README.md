@@ -7,6 +7,8 @@
 
 This is a plugin for [Simon Willison's LLM command-line utility](https://llm.datasette.io/) that lets you talk to models running on a local [LMStudio](https://lmstudio.ai/) server.
 
+Version 0.3.0 and later require LLM 0.32 or newer and support its structured messages, response parts, and resumable tool chains.
+
 ## Installation
 
 Make sure you have `llm` installed, then install this plugin from PyPI:

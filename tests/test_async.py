@@ -258,6 +258,7 @@ async def test_async_execute_handles_tool_call_response(monkeypatch):
 
     prompt = SimpleNamespace(
         prompt="Please check the weather in Berlin.",
+        messages=[llm.user("Please check the weather in Berlin.")],
         attachments=[],
         system=None,
         options=None,
@@ -275,16 +276,20 @@ async def test_async_execute_handles_tool_call_response(monkeypatch):
         )
     ]
 
-    assert result == [""]
+    assert [event.type for event in result] == [
+        "tool_call_name",
+        "tool_call_args",
+    ]
+    assert result[0].tool_call_id == "call_weather_async"
     response.add_tool_call.assert_called_once()
     added_call = response.add_tool_call.call_args[0][0]
     assert added_call.name == "get_weather"
     assert added_call.arguments == {"location": "Berlin"}
     assert added_call.tool_call_id == "call_weather_async"
-    response.set_usage.assert_called_once_with(input=33, output=7)
+    response.set_usage.assert_called_once_with(input=33, output=7, details=None)
 
     sent_tools = last_request["json"]["tools"]
     assert sent_tools[0]["function"]["name"] == "get_weather"
     assert sent_tools[0]["function"]["parameters"]["required"] == ["location"]
     final_message = last_request["json"]["messages"][-1]
-    assert final_message["content"][0]["text"] == "Please check the weather in Berlin."
+    assert final_message["content"] == "Please check the weather in Berlin."
