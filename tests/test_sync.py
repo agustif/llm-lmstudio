@@ -128,6 +128,22 @@ def mock_prompt_factory():
 
 # Removed custom captured_stderr, will use capsys
 
+def test_debug_logging_is_disabled_by_default(monkeypatch, capsys):
+    monkeypatch.delenv("LLM_LMSTUDIO_DEBUG", raising=False)
+
+    llm_lmstudio._debug("LMSTUDIO DEBUG: hidden")
+
+    assert capsys.readouterr().err == ""
+
+
+def test_debug_logging_writes_to_stderr_when_enabled(monkeypatch, capsys):
+    monkeypatch.setenv("LLM_LMSTUDIO_DEBUG", "1")
+
+    llm_lmstudio._debug("LMSTUDIO DEBUG: visible")
+
+    assert capsys.readouterr().err == "LMSTUDIO DEBUG: visible\n"
+
+
 # --- Tests for _build_messages (which calls _encode_attachments) ---
 
 

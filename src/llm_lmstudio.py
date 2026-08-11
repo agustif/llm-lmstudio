@@ -47,6 +47,11 @@ _cache: dict[str, tuple[list[dict[str, Any]], str]] = {}
 _errors: dict[str, Exception] = {}
 
 
+def _debug(message: str) -> None:
+    if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+        print(message, file=sys.stderr)
+
+
 def _fetch_models(base: str) -> tuple[list[dict[str, Any]], str]:
     """Return cached metadata and API path prefix for one LM Studio server."""
     if base in _cache:
@@ -54,27 +59,19 @@ def _fetch_models(base: str) -> tuple[list[dict[str, Any]], str]:
     try:
         # Prefer the richer metadata endpoint
         api_path = "/api/v0"
-        if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-            print(
-                f"LMSTUDIO DEBUG: Fetching models from {base}{api_path}/models",
-                file=sys.stderr,
-            )
+        _debug(f"LMSTUDIO DEBUG: Fetching models from {base}{api_path}/models")
         r = requests.get(f"{base}{api_path}/models", timeout=TIMEOUT)
         if r.status_code == 404:  # Older LM Studio → fall back
             api_path = "/v1"
-            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                print(
-                    f"LMSTUDIO DEBUG: {base}/api/v0/models not found, falling back to {base}{api_path}/models",
-                    file=sys.stderr,
-                )
+            _debug(
+                f"LMSTUDIO DEBUG: {base}/api/v0/models not found, falling back to {base}{api_path}/models"
+            )
             r = requests.get(f"{base}{api_path}/models", timeout=TIMEOUT)
             r.raise_for_status()
             data = r.json().get("data", [])
-            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                print(
-                    f"LMSTUDIO DEBUG: Received data from /v1 endpoint for {base}: {data}",
-                    file=sys.stderr,
-                )  # Print all v1 data
+            _debug(
+                f"LMSTUDIO DEBUG: Received data from /v1 endpoint for {base}: {data}"
+            )
             # v1 has no 'type'; assume plain LLM or infer from ID
             meta = []
             for m_data in data:
@@ -82,25 +79,18 @@ def _fetch_models(base: str) -> tuple[list[dict[str, Any]], str]:
                 m_type = "embeddings" if "embed" in m_id.lower() else "llm"
                 # V1 doesn't reliably tell us VLM status
                 current_model_meta = {"id": m_id, "type": m_type, "vision": False}
-                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                    print(
-                        f"LMSTUDIO DEBUG: Processed /v1 model data for {base}: ID={m_id}, Inferred Type={m_type}, Vision=False",
-                        file=sys.stderr,
-                    )
+                _debug(
+                    f"LMSTUDIO DEBUG: Processed /v1 model data for {base}: ID={m_id}, Inferred Type={m_type}, Vision=False"
+                )
                 meta.append(current_model_meta)
         else:
             r.raise_for_status()
             meta = r.json().get("data", [])
-            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                print(
-                    f"LMSTUDIO DEBUG: Received full metadata from /api/v0 for {base}:",
-                    file=sys.stderr,
+            _debug(f"LMSTUDIO DEBUG: Received full metadata from /api/v0 for {base}:")
+            for m_debug in meta:
+                _debug(
+                    f"  LMSTUDIO DEBUG: Model ID: {m_debug.get('id')}, Type: {m_debug.get('type')}, Original Vision: {m_debug.get('vision')}, Path: {m_debug.get('path')}, Publisher: {m_debug.get('publisher')}, Architecture: {m_debug.get('architecture')}, Quantization: {m_debug.get('quantization')}"
                 )
-                for m_debug in meta:
-                    print(
-                        f"  LMSTUDIO DEBUG: Model ID: {m_debug.get('id')}, Type: {m_debug.get('type')}, Original Vision: {m_debug.get('vision')}, Path: {m_debug.get('path')}, Publisher: {m_debug.get('publisher')}, Architecture: {m_debug.get('architecture')}, Quantization: {m_debug.get('quantization')}",
-                        file=sys.stderr,
-                    )  # Added more fields
 
             # Add 'vision' flag for /api/v0 models for clarity
             for m in meta:
@@ -112,11 +102,9 @@ def _fetch_models(base: str) -> tuple[list[dict[str, Any]], str]:
                 m["vision"] = (
                     is_vlm_type or has_vision_flag
                 )  # Set our 'vision' flag based on these
-                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                    print(
-                        f"  LMSTUDIO DEBUG: For model {m.get('id')}: Original type='{m.get('type')}', original vision_key_present_and_true='{has_vision_flag}', calculated plugin vision_support='{m['vision']}'",
-                        file=sys.stderr,
-                    )
+                _debug(
+                    f"  LMSTUDIO DEBUG: For model {m.get('id')}: Original type='{m.get('type')}', original vision_key_present_and_true='{has_vision_flag}', calculated plugin vision_support='{m['vision']}'"
+                )
 
         _cache[base] = (meta, api_path)
         return meta, api_path
@@ -177,15 +165,12 @@ def register_models(register):
                     display_suffix_parts
                 )  # Join with spaces, add leading space
 
-            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                print(
-                    f"LMSTUDIO DEBUG [register_models]: Base model_id: '{model_id}', Calculated display_suffix: '{display_suffix}'",
-                    file=sys.stderr,
-                )
-                print(
-                    f"LMSTUDIO DEBUG [register_models]: For {raw_id}, passing model_id='{model_id}', supports_images={supports_images_flag} to constructor.",
-                    file=sys.stderr,
-                )
+            _debug(
+                f"LMSTUDIO DEBUG [register_models]: Base model_id: '{model_id}', Calculated display_suffix: '{display_suffix}'"
+            )
+            _debug(
+                f"LMSTUDIO DEBUG [register_models]: For {raw_id}, passing model_id='{model_id}', supports_images={supports_images_flag} to constructor."
+            )
 
             current_metadata = {
                 "publisher": m.get("publisher"),
@@ -231,11 +216,10 @@ def register_models(register):
                     display_suffix=display_suffix,
                 ),
             )
-    if _errors and os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-        print(
+    if _errors:
+        _debug(
             "Warning: Some LM Studio servers were unreachable:\n  "
-            + "\n  ".join(f"{k}: {v}" for k, v in _errors.items()),
-            file=sys.stderr,
+            + "\n  ".join(f"{k}: {v}" for k, v in _errors.items())
         )
 
 
@@ -719,28 +703,22 @@ class LMStudioBaseModel:
     def _encode_attachment(self, attachment: llm.Attachment) -> list[dict]:
         """Encode one image attachment as an OpenAI image_url content part."""
         if not self.supports_images:
-            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                print(
-                    f"LMSTUDIO DEBUG: Model {self.model_id} does not support images, but attachment {attachment.path or attachment.url or 'content'} was provided. Ignoring.",
-                    file=sys.stderr,
-                )
+            _debug(
+                f"LMSTUDIO DEBUG: Model {self.model_id} does not support images, but attachment {attachment.path or attachment.url or 'content'} was provided. Ignoring."
+            )
             return []
         try:
             resolved_type = attachment.resolve_type()
             if resolved_type not in self.attachment_types:
-                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                    print(
-                        f"LMSTUDIO DEBUG: Attachment type {resolved_type} not in model's supported image types. Skipping {attachment.path or attachment.url or 'content'}.",
-                        file=sys.stderr,
-                    )
+                _debug(
+                    f"LMSTUDIO DEBUG: Attachment type {resolved_type} not in model's supported image types. Skipping {attachment.path or attachment.url or 'content'}."
+                )
                 return []
             base64_content = attachment.base64_content()
             data_uri = f"data:{resolved_type};base64,{base64_content}"
-            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                print(
-                    f"LMSTUDIO DEBUG: Encoded image attachment: {attachment.path or attachment.url or 'content'} as {resolved_type}.",
-                    file=sys.stderr,
-                )
+            _debug(
+                f"LMSTUDIO DEBUG: Encoded image attachment: {attachment.path or attachment.url or 'content'} as {resolved_type}."
+            )
             return [{"type": "image_url", "image_url": {"url": data_uri}}]
         except Exception as e:
             print(
@@ -830,11 +808,7 @@ class LMStudioBaseModel:
             try:
                 yield from self._record_tool_call(response, tool_call_data)
             except (json.JSONDecodeError, TypeError) as e:
-                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                    print(
-                        f"LMSTUDIO DEBUG: Error processing tool call: {e}",
-                        file=sys.stderr,
-                    )
+                _debug(f"LMSTUDIO DEBUG: Error processing tool call: {e}")
 
         if message.get("content"):
             yield StreamEvent(type="text", chunk=message["content"])
@@ -901,11 +875,7 @@ class LMStudioBaseModel:
             try:
                 yield from self._record_tool_call(response, tool_call_data)
             except (json.JSONDecodeError, TypeError) as e:
-                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                    print(
-                        f"LMSTUDIO DEBUG: Error processing tool call: {e}",
-                        file=sys.stderr,
-                    )
+                _debug(f"LMSTUDIO DEBUG: Error processing tool call: {e}")
 
 
 class LMStudioModel(LMStudioBaseModel, llm.Model):
