@@ -176,6 +176,81 @@ async def test_async_prompt_schema(mock_fetch_list, mock_is_loaded):
         raise
 
 
+async def test_async_execute_streams_events_and_records_usage(monkeypatch):
+    monkeypatch.setattr(
+        llm_lmstudio.LMStudioAsyncModel, "_is_model_loaded", lambda self: True
+    )
+
+    lines = [
+        'data: {"model":"resolved-model","choices":[{"delta":{"reasoning_content":"Thinking"}}]}',
+        'data: {"choices":[{"delta":{"content":"Done"}}]}',
+        'data: {"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":5}}',
+        "data: [DONE]",
+    ]
+    captured = {}
+
+    async def handler(request):
+        captured["request"] = request
+        return llm_lmstudio.httpx.Response(
+            200,
+            content="\n\n".join(lines),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    transport = llm_lmstudio.httpx.MockTransport(handler)
+    async_client_class = llm_lmstudio.httpx.AsyncClient
+
+    def create_client(**kwargs):
+        captured["client_kwargs"] = kwargs
+        return async_client_class(transport=transport, **kwargs)
+
+    monkeypatch.setattr(llm_lmstudio.httpx, "AsyncClient", create_client)
+
+    model = llm_lmstudio.LMStudioAsyncModel(
+        model_id="lmstudio/test",
+        base_url="http://localhost:1234",
+        raw_id="test-model",
+        api_path_prefix="/api/v0",
+    )
+    prompt = SimpleNamespace(
+        messages=[llm.user("Hello")],
+        options=None,
+        schema=None,
+        tools=[],
+    )
+    response = MagicMock()
+
+    events = [
+        event
+        async for event in model.execute(
+            prompt=prompt,
+            stream=True,
+            response=response,
+            conversation=None,
+        )
+    ]
+
+    assert [(event.type, event.chunk) for event in events] == [
+        ("reasoning", "Thinking"),
+        ("text", "Done"),
+    ]
+    assert captured["client_kwargs"] == {"timeout": llm_lmstudio.TIMEOUT}
+    request = captured["request"]
+    assert request.method == "POST"
+    assert str(request.url) == "http://localhost:1234/api/v0/chat/completions"
+    assert json.loads(request.content) == {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    assert response.response_json == {
+        "chunks": [json.loads(line[5:]) for line in lines[:-1]]
+    }
+    response.set_resolved_model.assert_called_once_with("resolved-model")
+    response.set_usage.assert_called_once_with(input=42, output=5, details=None)
+
+
 async def test_async_execute_handles_tool_call_response(monkeypatch):
     monkeypatch.setattr(
         llm_lmstudio.LMStudioAsyncModel, "_is_model_loaded", lambda self: True
