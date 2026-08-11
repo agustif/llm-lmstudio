@@ -3,6 +3,23 @@
 ## Unreleased
 
 
+## v0.3.1 - 2026-08-11
+
+### Changed
+- The publish workflow now starts when a GitHub release is published. Draft releases no longer start the workflow too early.
+- Exception handlers now catch expected request, response, and attachment errors instead of hiding unrelated errors.
+- Async tests now use the public `llm.Prompt` and `StreamEvent` types.
+
+### Fixed
+- The backward-compatible attachment encoder now handles `llm.Prompt.attachments` when its value is `None`.
+- Server-side tools now return a clear error instead of producing an invalid custom-tool request.
+- Removed redundant test exception handlers and an unused test-file shebang.
+
+### Documentation
+- Added live acceptance verification instructions for `manual-testing.md`.
+- Documented server-side tool support as a possible community contribution.
+
+
 ## v0.3.0 - 2026-08-11
 
 ### Added
