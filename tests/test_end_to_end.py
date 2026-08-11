@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 End-to-end synchronous LM Studio plugin test recorded with pytest-vcr.
 
