@@ -277,35 +277,20 @@ async def test_async_execute_handles_tool_call_response(monkeypatch):
         "usage": {"prompt_tokens": 33, "completion_tokens": 7},
     }
 
-    class FakeAsyncResponse:
-        def __init__(self, payload):
-            self._payload = payload
-            self.text = json.dumps(payload)
+    captured = {}
 
-        def raise_for_status(self):
-            return None
+    async def handler(request):
+        captured["request"] = request
+        return llm_lmstudio.httpx.Response(200, json=api_response)
 
-        def json(self):
-            return self._payload
+    transport = llm_lmstudio.httpx.MockTransport(handler)
+    async_client_class = llm_lmstudio.httpx.AsyncClient
 
-    last_request = {}
+    def create_client(**kwargs):
+        captured["client_kwargs"] = kwargs
+        return async_client_class(transport=transport, **kwargs)
 
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def post(self, url, json=None):
-            last_request["url"] = url
-            last_request["json"] = json
-            return FakeAsyncResponse(api_response)
-
-    monkeypatch.setattr(llm_lmstudio.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(llm_lmstudio.httpx, "AsyncClient", create_client)
 
     async_model = llm_lmstudio.LMStudioAsyncModel(
         model_id="lmstudio/test",
@@ -363,8 +348,13 @@ async def test_async_execute_handles_tool_call_response(monkeypatch):
     assert added_call.tool_call_id == "call_weather_async"
     response.set_usage.assert_called_once_with(input=33, output=7, details=None)
 
-    sent_tools = last_request["json"]["tools"]
+    assert captured["client_kwargs"] == {"timeout": llm_lmstudio.TIMEOUT}
+    request = captured["request"]
+    assert request.method == "POST"
+    assert str(request.url) == "http://localhost:1234/api/v0/chat/completions"
+    request_json = json.loads(request.content)
+    sent_tools = request_json["tools"]
     assert sent_tools[0]["function"]["name"] == "get_weather"
     assert sent_tools[0]["function"]["parameters"]["required"] == ["location"]
-    final_message = last_request["json"]["messages"][-1]
+    final_message = request_json["messages"][-1]
     assert final_message["content"] == "Please check the weather in Berlin."
