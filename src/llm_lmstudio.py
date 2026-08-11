@@ -615,7 +615,7 @@ class LMStudioBaseModel:
     def _encode_attachments(self, prompt: llm.Prompt) -> list[dict]:
         """Backward-compatible helper for encoding prompt attachments."""
         encoded_attachments = []
-        for attachment in prompt.attachments:
+        for attachment in prompt.attachments or []:
             encoded_attachments.extend(self._encode_attachment(attachment))
         return encoded_attachments
 

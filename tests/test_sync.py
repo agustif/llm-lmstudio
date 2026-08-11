@@ -145,7 +145,14 @@ def test_debug_logging_writes_to_stderr_when_enabled(monkeypatch, capsys):
 # --- Tests for _build_messages (which calls _encode_attachments) ---
 
 
-def test_build_messages_with_text_and_valid_image(
+def test_encode_attachments_accepts_none(vlm_model):
+    prompt = MagicMock(spec=llm.Prompt)
+    prompt.attachments = None
+
+    assert vlm_model._encode_attachments(prompt) == []
+
+
+def test_build_messages_vlm_with_text_and_image(
     vlm_model, mock_prompt_factory, mock_attachment_factory
 ):
     image_attachment = mock_attachment_factory(
