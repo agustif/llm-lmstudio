@@ -12,7 +12,7 @@ import sys
 import time
 import uuid
 from collections.abc import AsyncGenerator, Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, cast
 from urllib.parse import urlparse
 
@@ -265,6 +265,13 @@ class ChatRequest:
     payload: dict[str, Any]
     stream: bool
     timeout: float
+
+
+@dataclass
+class StreamState:
+    chunks: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, Any] | None = None
 
 
 class LMStudioBaseModel:
@@ -834,6 +841,72 @@ class LMStudioBaseModel:
 
         self._set_usage(response, payload.get("usage"))
 
+    def _process_stream_line(
+        self,
+        line: str,
+        state: StreamState,
+    ) -> Iterator[StreamEvent]:
+        if not line or line == "data: [DONE]" or not line.startswith("data:"):
+            return
+
+        try:
+            chunk_data = line[5:].strip()
+            if not chunk_data:
+                return
+            chunk = json.loads(chunk_data)
+            state.chunks.append(chunk)
+            if chunk.get("usage"):
+                state.usage = chunk["usage"]
+            if not chunk.get("choices"):
+                return
+
+            delta = chunk["choices"][0].get("delta", {})
+            reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+            if reasoning:
+                yield StreamEvent(type="reasoning", chunk=reasoning)
+
+            token = delta.get("content") or ""
+            if token:
+                yield StreamEvent(type="text", chunk=token)
+
+            for tool_call_delta in delta.get("tool_calls") or []:
+                index = tool_call_delta["index"]
+                while len(state.tool_calls) <= index:
+                    state.tool_calls.append(
+                        {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        }
+                    )
+
+                tool_call = state.tool_calls[index]
+                tool_call["id"] += tool_call_delta.get("id") or ""
+                function_delta = tool_call_delta.get("function", {})
+                tool_call["function"]["name"] += function_delta.get("name") or ""
+                tool_call["function"]["arguments"] += (
+                    function_delta.get("arguments") or ""
+                )
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return
+
+    def _finalize_stream(
+        self,
+        response,
+        state: StreamState,
+    ) -> Iterator[StreamEvent]:
+        self._set_response_metadata(response, {"chunks": state.chunks})
+        self._set_usage(response, state.usage)
+        for tool_call_data in state.tool_calls:
+            try:
+                yield from self._record_tool_call(response, tool_call_data)
+            except (json.JSONDecodeError, TypeError) as e:
+                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                    print(
+                        f"LMSTUDIO DEBUG: Error processing tool call: {e}",
+                        file=sys.stderr,
+                    )
+
 
 class LMStudioModel(LMStudioBaseModel, llm.Model):
     """Chat/completion model class."""
@@ -906,77 +979,11 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
 
         # --- Process Response --- #
         if stream:
-            current_tool_calls = []
-            chunks = []
-            usage = None
-            event_name = None
-
+            state = StreamState()
             for line in r.iter_lines():
-                if not line:
-                    event_name = None
-                    continue
-                if line.startswith(b"event:"):
-                    event_name = line.decode("utf-8", "replace")[6:].strip()
-                    continue
-                if line == b"data: [DONE]" or not line.startswith(b"data:"):
-                    continue
-                try:
-                    chunk_data = line.decode("utf-8")[5:].strip()
-                    if not chunk_data:
-                        continue
-                    chunk = json.loads(chunk_data)
-                    chunks.append(chunk)
-                    if chunk.get("usage"):
-                        usage = chunk["usage"]
-                    if not chunk.get("choices"):
-                        continue
-                    choice = chunk["choices"][0]
-                    delta = choice.get("delta", {})
-
-                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
-                    if reasoning:
-                        yield StreamEvent(type="reasoning", chunk=reasoning)
-
-                    token = delta.get("content") or ""
-                    if token:
-                        yield StreamEvent(type="text", chunk=token)
-
-                    if delta.get("tool_calls"):
-                        for tc_delta in delta["tool_calls"]:
-                            index = tc_delta["index"]
-                            while len(current_tool_calls) <= index:
-                                current_tool_calls.append(
-                                    {
-                                        "id": "",
-                                        "type": "function",
-                                        "function": {"name": "", "arguments": ""},
-                                    }
-                                )
-
-                            if tc_delta.get("id"):
-                                current_tool_calls[index]["id"] += tc_delta["id"]
-                            if tc_delta.get("function", {}).get("name"):
-                                current_tool_calls[index]["function"]["name"] += (
-                                    tc_delta["function"]["name"]
-                                )
-                            if tc_delta.get("function", {}).get("arguments"):
-                                current_tool_calls[index]["function"]["arguments"] += (
-                                    tc_delta["function"]["arguments"]
-                                )
-                except (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError):
-                    continue
-
-            self._set_response_metadata(response, {"chunks": chunks})
-            self._set_usage(response, usage)
-            for tool_call_data in current_tool_calls:
-                try:
-                    yield from self._record_tool_call(response, tool_call_data)
-                except (json.JSONDecodeError, TypeError) as e:
-                    if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                        print(
-                            f"LMSTUDIO DEBUG: Error processing tool call: {e}",
-                            file=sys.stderr,
-                        )
+                decoded_line = line.decode("utf-8", "replace")
+                yield from self._process_stream_line(decoded_line, state)
+            yield from self._finalize_stream(response, state)
 
         else:  # Non-streaming
             try:
@@ -1036,93 +1043,12 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                         "POST", request.url, json=request.payload
                     ) as r:
                         r.raise_for_status()
-                        current_tool_calls = []
-                        chunks = []
-                        usage = None
-                        event_name = None
-
+                        state = StreamState()
                         async for line in r.aiter_lines():
-                            if not line:
-                                event_name = None
-                                continue
-                            if line.startswith("event:"):
-                                event_name = line[6:].strip()
-                                continue
-                            if line == "data: [DONE]" or not line.startswith("data:"):
-                                continue
-                            try:
-                                chunk_data = line[5:].strip()
-                                if not chunk_data:
-                                    continue
-                                chunk = json.loads(chunk_data)
-                                chunks.append(chunk)
-                                if chunk.get("usage"):
-                                    usage = chunk["usage"]
-                                if not chunk.get("choices"):
-                                    continue
-                                choice = chunk["choices"][0]
-                                delta = choice.get("delta", {})
-
-                                reasoning = delta.get("reasoning_content") or delta.get(
-                                    "reasoning"
-                                )
-                                if reasoning:
-                                    yield StreamEvent(
-                                        type="reasoning", chunk=reasoning
-                                    )
-                                token = delta.get("content") or ""
-                                if token:
-                                    yield StreamEvent(type="text", chunk=token)
-
-                                if delta.get("tool_calls"):
-                                    for tc_delta in delta["tool_calls"]:
-                                        index = tc_delta["index"]
-                                        while len(current_tool_calls) <= index:
-                                            current_tool_calls.append(
-                                                {
-                                                    "id": "",
-                                                    "type": "function",
-                                                    "function": {
-                                                        "name": "",
-                                                        "arguments": "",
-                                                    },
-                                                }
-                                            )
-                                        if tc_delta.get("id"):
-                                            current_tool_calls[index]["id"] += tc_delta[
-                                                "id"
-                                            ]
-                                        if tc_delta.get("function", {}).get("name"):
-                                            current_tool_calls[index]["function"][
-                                                "name"
-                                            ] += tc_delta["function"]["name"]
-                                        if tc_delta.get("function", {}).get(
-                                            "arguments"
-                                        ):
-                                            current_tool_calls[index]["function"][
-                                                "arguments"
-                                            ] += tc_delta["function"]["arguments"]
-                            except (
-                                json.JSONDecodeError,
-                                KeyError,
-                                TypeError,
-                            ):
-                                continue
-
-                        self._set_response_metadata(response, {"chunks": chunks})
-                        self._set_usage(response, usage)
-                        for tool_call_data in current_tool_calls:
-                            try:
-                                for event in self._record_tool_call(
-                                    response, tool_call_data
-                                ):
-                                    yield event
-                            except (json.JSONDecodeError, TypeError) as e:
-                                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                                    print(
-                                        f"LMSTUDIO DEBUG: Error processing async tool call: {e}",
-                                        file=sys.stderr,
-                                    )
+                            for event in self._process_stream_line(line, state):
+                                yield event
+                        for event in self._finalize_stream(response, state):
+                            yield event
 
                 else:  # Non-streaming async
                     r = await client.post(request.url, json=request.payload)

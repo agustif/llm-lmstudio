@@ -606,6 +606,42 @@ def test_prepare_chat_request_for_schema_forces_non_streaming(
     }
 
 
+def test_process_and_finalize_stream(vlm_model):
+    response = MagicMock()
+    state = llm_lmstudio.StreamState()
+    lines = [
+        "event: message",
+        "not SSE data",
+        'data: {"model":"resolved-model","choices":[{"delta":{"reasoning_content":"Thinking"}}]}',
+        'data: {"choices":[{"delta":{"content":"Done"}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"look","arguments":"{\\"query\\":"}}]}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"up","arguments":" \\"birds\\"}"}}]}}]}',
+        'data: {"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":5}}',
+        "data: [DONE]",
+    ]
+
+    events = [
+        event
+        for line in lines
+        for event in vlm_model._process_stream_line(line, state)
+    ]
+    events.extend(vlm_model._finalize_stream(response, state))
+
+    assert [(event.type, event.chunk) for event in events] == [
+        ("reasoning", "Thinking"),
+        ("text", "Done"),
+        ("tool_call_name", "lookup"),
+        ("tool_call_args", '{"query": "birds"}'),
+    ]
+    assert response.response_json == {"chunks": state.chunks}
+    response.set_resolved_model.assert_called_once_with("resolved-model")
+    response.set_usage.assert_called_once_with(input=42, output=5, details=None)
+    added_call = response.add_tool_call.call_args.args[0]
+    assert added_call.name == "lookup"
+    assert added_call.arguments == {"query": "birds"}
+    assert added_call.tool_call_id == "call_1"
+
+
 def test_process_non_streaming_response(vlm_model):
     response = MagicMock()
     payload = {
