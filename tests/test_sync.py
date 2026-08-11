@@ -477,6 +477,58 @@ def test_build_messages_includes_current_tool_results(vlm_model, mock_prompt_fac
     assert messages[1]["content"] == "Here are the results."
 
 
+def test_sync_stream_ignores_invalid_utf8_and_recovers(
+    monkeypatch, vlm_model, capsys
+):
+    monkeypatch.setenv("LLM_LMSTUDIO_DEBUG", "1")
+    monkeypatch.setattr(
+        llm_lmstudio.LMStudioModel, "_is_model_loaded", lambda self: True
+    )
+
+    class StreamResponse:
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    b'data: {"choices":[{"delta":{"content":"bad \xff"}}]}',
+                    b'data: {"model":"resolved-model","choices":[{"delta":{"content":"Recovered"}}]}',
+                    b'data: {"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":5}}',
+                    b"data: [DONE]",
+                ]
+            )
+
+    monkeypatch.setattr(
+        llm_lmstudio.requests,
+        "post",
+        lambda *args, **kwargs: StreamResponse(),
+    )
+    prompt = SimpleNamespace(
+        messages=[llm.user("Hello")],
+        options=None,
+        schema=None,
+        tools=[],
+    )
+    response = MagicMock(spec=llm.Response)
+
+    events = list(
+        vlm_model.execute(
+            prompt=prompt,
+            stream=True,
+            response=response,
+            conversation=None,
+        )
+    )
+
+    assert [(event.type, event.chunk) for event in events] == [
+        ("text", "Recovered")
+    ]
+    assert "Ignoring invalid UTF-8 stream line" in capsys.readouterr().err
+    response.set_resolved_model.assert_called_once_with("resolved-model")
+    response.set_usage.assert_called_once_with(input=42, output=5, details=None)
+
+
 def test_execute_handles_tool_call_response(monkeypatch, vlm_model):
     monkeypatch.setattr(
         llm_lmstudio.LMStudioModel, "_is_model_loaded", lambda self: True

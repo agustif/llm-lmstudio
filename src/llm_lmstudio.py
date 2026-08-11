@@ -1008,7 +1008,13 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
         if stream:
             state = StreamState()
             for line in r.iter_lines():
-                decoded_line = line.decode("utf-8", "replace")
+                try:
+                    decoded_line = line.decode("utf-8")
+                except UnicodeDecodeError as e:
+                    _debug(
+                        f"LMSTUDIO DEBUG: Ignoring invalid UTF-8 stream line: {e}"
+                    )
+                    continue
                 yield from self._process_stream_line(decoded_line, state)
             yield from self._finalize_stream(response, state)
 
