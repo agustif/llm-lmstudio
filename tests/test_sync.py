@@ -977,28 +977,17 @@ def test_build_messages_preserves_reasoning_part(vlm_model, mock_prompt_factory)
     ]
 
 
-def test_attempt_load_model_uses_model_key_and_respects_server(monkeypatch):
-    monkeypatch.setattr(llm_lmstudio, "SERVER_LIST", ["https://10.0.0.5:9000"])
-    monkeypatch.setattr(
-        llm_lmstudio.LMStudioModel, "_is_model_loaded", lambda self: True
-    )
-
-    captured_cmd = {}
-
-    class FakeProcess:
-        def __init__(self):
-            self.stdout = io.StringIO("")
-            self.stderr = io.StringIO("")
-            self.returncode = 0
-
-        def wait(self, timeout=None):
-            return 0
-
-    def fake_popen(cmd, **kwargs):
-        captured_cmd["value"] = cmd
-        return FakeProcess()
-
-    monkeypatch.setattr(llm_lmstudio.subprocess, "Popen", fake_popen)
+def test_attempt_load_model_uses_v1_api_and_configured_server(monkeypatch):
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        "type": "llm",
+        "instance_id": "test-raw",
+        "load_time_seconds": 1.25,
+        "status": "loaded",
+    }
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr(llm_lmstudio.requests, "post", post)
 
     model = llm_lmstudio.LMStudioModel(
         model_id="test-id",
@@ -1008,12 +997,27 @@ def test_attempt_load_model_uses_model_key_and_respects_server(monkeypatch):
     )
 
     assert model._attempt_load_model() is True
-    assert captured_cmd["value"] == [
-        "lms",
-        "load",
-        "test-raw",
-        "--host",
-        "10.0.0.5",
-        "--port",
-        "9000",
-    ]
+    post.assert_called_once_with(
+        "https://10.0.0.5:9000/api/v1/models/load",
+        json={"model": "test-raw"},
+        timeout=llm_lmstudio.TIMEOUT,
+    )
+
+
+def test_attempt_load_model_reports_api_error(monkeypatch, capsys):
+    response = MagicMock()
+    response.json.return_value = {
+        "error": {"message": "Model could not be loaded"}
+    }
+    error = llm_lmstudio.requests.HTTPError(response=response)
+    monkeypatch.setattr(llm_lmstudio.requests, "post", MagicMock(side_effect=error))
+
+    model = llm_lmstudio.LMStudioModel(
+        model_id="test-id",
+        base_url="http://localhost:1234",
+        raw_id="test-raw",
+        api_path_prefix="/api/v0",
+    )
+
+    assert model._attempt_load_model() is False
+    assert "Model could not be loaded" in capsys.readouterr().err

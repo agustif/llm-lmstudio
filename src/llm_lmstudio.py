@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import time
 import uuid
@@ -38,7 +37,6 @@ raw = (
 )  # hard default
 SERVER_LIST = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
 TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", "90"))
-LLM_LMSTUDIO_TTL = os.getenv("LLM_LMSTUDIO_TTL")
 
 # --------------------------------------------------------------------------- #
 #  Internal helpers                                                           #
@@ -395,162 +393,43 @@ class LMStudioBaseModel:
             )
             return False  # Assume not loaded if check fails
 
-    def _attempt_load_model(self):
-        """Attempt to load the model using 'lms load' and show simple progress."""
-        debug_enabled = os.getenv("LLM_LMSTUDIO_DEBUG") == "1"
-
-        if debug_enabled:
-            print(
-                f"LMSTUDIO INFO: Model '{self.raw_id}' not loaded. Attempting to load...",
-                file=sys.stderr,
-            )
-        else:
-            # Show minimal non-debug message
-            print(f"\rLoading model '{self.raw_id}'...", end="", file=sys.stderr)
+    def _attempt_load_model(self) -> bool:
+        """Load the model through LM Studio's synchronous REST endpoint."""
+        _debug(
+            f"LMSTUDIO INFO: Model '{self.raw_id}' not loaded. Attempting to load..."
+        )
 
         try:
-            server = urlparse(self.base)
-            lms_load_cmd = [
-                "lms",
-                "load",
-                self.raw_id,
-                "--host",
-                str(server.hostname),
-                "--port",
-                str(server.port),
-            ]
-            if LLM_LMSTUDIO_TTL is not None:
-                lms_load_cmd = lms_load_cmd + ["--ttl", LLM_LMSTUDIO_TTL]
-            if debug_enabled:
-                print(f"Running command '{lms_load_cmd}'", file=sys.stderr)
-
-            process = subprocess.Popen(
-                lms_load_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,  # Decode output as text
-                bufsize=1,  # Line buffered
+            response = requests.post(
+                f"{self.base}/api/v1/models/load",
+                json={"model": self.raw_id},
+                timeout=TIMEOUT,
             )
+            response.raise_for_status()
+            result = response.json()
+            if result.get("status") != "loaded":
+                raise ValueError(f"Unexpected load response: {result}")
 
-            # --- Progress Display (only if not in debug mode) ---
-            if not debug_enabled and process.stdout:
-                for line in iter(process.stdout.readline, ""):
-                    stripped_line = line.strip()
-                    if stripped_line and "%" in stripped_line:
-                        # Extract just the progress bar part if possible, else show line
-                        progress_part = stripped_line
-                        try:
-                            # Try to extract just the bar and percentage
-                            bar_start = stripped_line.find("[")
-                            if bar_start != -1:
-                                progress_part = stripped_line[bar_start:]
-                        except Exception:
-                            pass  # Keep original line if parsing fails
-                        print(
-                            f"\rLoading: {progress_part:<80}", end="", file=sys.stderr
-                        )
-                    elif (
-                        stripped_line and debug_enabled
-                    ):  # Print non-progress stdout only in debug
-                        print(
-                            f"\nLMSTUDIO DEBUG [stdout]: {stripped_line}",
-                            file=sys.stderr,
-                        )
-            # --- End Progress Display ---
-
-            # Capture stderr
-            stderr_output = ""
-            if process.stderr:
-                stderr_output = process.stderr.read()
-                if debug_enabled and stderr_output.strip():  # Show stderr only in debug
-                    print(
-                        f"\nLMSTUDIO DEBUG [stderr]:\n{stderr_output.strip()}",
-                        file=sys.stderr,
-                    )
-
-            # Clear the loading/progress line
-            print(f"\r{' ':<90}\r", end="", file=sys.stderr)
-
-            process.wait(timeout=1)  # Short wait for final exit code
-            if debug_enabled:
-                print(
-                    f"LMSTUDIO DEBUG: 'lms load {self.raw_id}' command finished with code {process.returncode}.",
-                    file=sys.stderr,
-                )
-
-            if process.returncode != 0:
-                # Always print this error
-                print(
-                    f"LMSTUDIO ERROR: 'lms load {self.raw_id}' failed (code {process.returncode}).",
-                    file=sys.stderr,
-                )
-                if (
-                    stderr_output.strip()
-                ):  # Show stderr on error regardless of debug flag
-                    print(
-                        f"LMSTUDIO ERROR [stderr]:\n{stderr_output.strip()}",
-                        file=sys.stderr,
-                    )
-                return False
-
-            # Poll to confirm API status
-            max_wait_seconds = 30
-            poll_interval_seconds = 1
-            start_time = time.time()
-            while time.time() - start_time < max_wait_seconds:
-                if self._is_model_loaded():
-                    if debug_enabled:
-                        print(
-                            f"LMSTUDIO INFO: Model '{self.raw_id}' successfully loaded (confirmed via API).",
-                            file=sys.stderr,
-                        )
-                    return True
-                time.sleep(poll_interval_seconds)
-
-            # Always print this error
-            print(
-                f"LMSTUDIO ERROR: Model '{self.raw_id}' not detected as loaded via API within {max_wait_seconds} seconds after 'lms load' completed.",
-                file=sys.stderr,
+            duration = result.get("load_time_seconds")
+            duration_text = (
+                f" in {duration:.3f}s" if isinstance(duration, int | float) else ""
             )
+            _debug(
+                f"LMSTUDIO INFO: Model '{self.raw_id}' loaded{duration_text} as instance '{result.get('instance_id')}'."
+            )
+            return True
+        except requests.RequestException as e:
+            message = str(e)
+            if e.response is not None:
+                try:
+                    error = e.response.json().get("error", {})
+                    message = error.get("message", message)
+                except (ValueError, AttributeError):
+                    pass
+            print(f"LMSTUDIO ERROR: Failed to load model: {message}", file=sys.stderr)
             return False
-
-        except FileNotFoundError:
-            print(
-                f"\r{' ':<90}\r", end="", file=sys.stderr
-            )  # Clear potential progress line
-            # Always print this error
-            print(
-                "LMSTUDIO ERROR: 'lms' command not found. Cannot auto-load model.",
-                file=sys.stderr,
-            )
-            print(
-                "Please ensure LM Studio CLI is installed and in your PATH, or load the model manually.",
-                file=sys.stderr,
-            )
-            return False
-        except subprocess.TimeoutExpired:
-            print(
-                f"\r{' ':<90}\r", end="", file=sys.stderr
-            )  # Clear potential progress line
-            # Always print this error
-            print(
-                f"LMSTUDIO ERROR: Waiting for 'lms load {self.raw_id}' command timed out.",
-                file=sys.stderr,
-            )
-            try:
-                process.kill()
-            except Exception:
-                pass
-            return False
-        except Exception as e:
-            print(
-                f"\r{' ':<90}\r", end="", file=sys.stderr
-            )  # Clear potential progress line
-            # Always print this error
-            print(
-                f"LMSTUDIO ERROR: An unexpected error occurred while trying to load model: {e}",
-                file=sys.stderr,
-            )
+        except (ValueError, TypeError) as e:
+            print(f"LMSTUDIO ERROR: Failed to load model: {e}", file=sys.stderr)
             return False
 
     # --------------------------------------------------------------------- #
