@@ -18,30 +18,22 @@ llm, version 0.32
 ```
 
 ```bash
-.venv/bin/llm models list | rg "^lmstudio/"
+.venv/bin/llm models list | rg '^lmstudio/(minicpm5-1b|prism-ml/bonsai-27b) ' | sed 's/ ●//' | sort
 ```
 
 ```output
-lmstudio/minicpm5-1b ● ⚒
-lmstudio/prism-ml/bonsai-27b ● 👁 ⚒
-lmstudio/meta/muse-glimmer 👁 ⚒
-lmstudio/ornith-1.0-35b ⚒
-lmstudio/google/gemma-4-26b-a4b 👁 ⚒
-lmstudio/google/gemma-4-31b 👁 ⚒
-lmstudio/qwen/qwen3.6-35b-a3b 👁 ⚒
-lmstudio/qwen/qwen3.6-27b 👁 ⚒
-lmstudio/google/gemma-4-e4b 👁 ⚒
-lmstudio/google/gemma-4-e2b 👁 ⚒
+lmstudio/minicpm5-1b ⚒
+lmstudio/prism-ml/bonsai-27b 👁 ⚒
 ```
 
 The model list contains both test models. LM Studio reports vision and tool capabilities with display suffixes.
 
 ```bash
-.venv/bin/llm models list --options -m lmstudio/minicpm5-1b
+.venv/bin/llm models list --options -m lmstudio/minicpm5-1b | sed '1s/ ●//'
 ```
 
 ```output
-lmstudio/minicpm5-1b ● ⚒
+lmstudio/minicpm5-1b ⚒
   Options:
     temperature: float
       Sampling temperature
@@ -61,11 +53,11 @@ lmstudio/minicpm5-1b ● ⚒
 ```
 
 ```bash
-.venv/bin/llm models list --options -m lmstudio/prism-ml/bonsai-27b
+.venv/bin/llm models list --options -m lmstudio/prism-ml/bonsai-27b | sed '1s/ ●//'
 ```
 
 ```output
-lmstudio/prism-ml/bonsai-27b ● 👁 ⚒
+lmstudio/prism-ml/bonsai-27b 👁 ⚒
   Options:
     temperature: float
       Sampling temperature
@@ -86,27 +78,33 @@ lmstudio/prism-ml/bonsai-27b ● 👁 ⚒
 
 ## Automatic loading and basic prompting
 
-This check unloads the GGUF model first. The following llm request must load it through POST /api/v1/models/load before generation.
+This check requests a GGUF model unload and verifies the unloaded state. The next request must load it through `POST /api/v1/models/load` before generation.
 
 ```bash
-lms unload minicpm5-1b && .venv/bin/llm -m lmstudio/minicpm5-1b -R "Reply with exactly: GGUF_OK"
+lms unload minicpm5-1b >/dev/null 2>&1 || true
+if .venv/bin/llm models list | grep -Fq 'lmstudio/minicpm5-1b ●'; then
+    echo 'GGUF model is still loaded' >&2
+    exit 1
+fi
+.venv/bin/llm -m lmstudio/minicpm5-1b -R "Reply with exactly: GGUF_OK" 2>&1 | sed '/^[[:space:]]*$/d'
 ```
 
 ```output
-Model "minicpm5-1b" unloaded.
 GGUF_OK
 ```
 
-This check repeats the same path with the installed MLX model.
+This check repeats the same path with the installed MLX model. LM Studio can report `Model Not Found` when the model is already unloaded.
 
 ```bash
-lms unload prism-ml/bonsai-27b && .venv/bin/llm -m lmstudio/prism-ml/bonsai-27b -R "Reply with exactly: MLX_OK"
+lms unload prism-ml/bonsai-27b >/dev/null 2>&1 || true
+if .venv/bin/llm models list | grep -Fq 'lmstudio/prism-ml/bonsai-27b ●'; then
+    echo 'MLX model is still loaded' >&2
+    exit 1
+fi
+.venv/bin/llm -m lmstudio/prism-ml/bonsai-27b -R "Reply with exactly: MLX_OK" 2>&1 | sed '/^[[:space:]]*$/d'
 ```
 
 ```output
-Model "prism-ml/bonsai-27b" unloaded.
-
-
 MLX_OK
 ```
 
@@ -159,16 +157,16 @@ conversation recall: OK
 ## Embeddings
 
 ```bash
-.venv/bin/llm embed-models | rg '^LMStudioEmbeddingModel:'
+.venv/bin/llm embed-models | rg '^LMStudioEmbeddingModel:' | sort
 ```
 
 ```output
-LMStudioEmbeddingModel: text-embedding-nomic-embed-text-v1.5@q4_k_m
-LMStudioEmbeddingModel: text-embedding-qwen3-vl-reranker-2b
-LMStudioEmbeddingModel: text-embedding-qwen3-vl-embedding-2b
 LMStudioEmbeddingModel: text-embedding-jina-embeddings-v4-text-retrieval
 LMStudioEmbeddingModel: text-embedding-mxbai-embed-large-v1
+LMStudioEmbeddingModel: text-embedding-nomic-embed-text-v1.5@q4_k_m
 LMStudioEmbeddingModel: text-embedding-nomic-embed-text-v1.5@q8_0
+LMStudioEmbeddingModel: text-embedding-qwen3-vl-embedding-2b
+LMStudioEmbeddingModel: text-embedding-qwen3-vl-reranker-2b
 ```
 
 The base64 length gives a concise check that the embedding endpoint returned a non-empty vector.
