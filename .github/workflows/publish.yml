@@ -2,11 +2,8 @@ name: Publish Python Package
 
 on:
   release:
-    types: [created]
-  # Optional: Add trigger for pushes to master if you want to publish on every push
-  # push:
-  #   branches:
-  #     - master
+    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
