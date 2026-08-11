@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+## v0.3.0 - 2026-08-11
+
 ### Added
 - Support for LLM 0.32 structured messages and streaming events, including structured text, reasoning, and tool-call response parts.
 - Resolved model IDs and raw provider response payloads are now recorded on responses when LM Studio supplies them.
