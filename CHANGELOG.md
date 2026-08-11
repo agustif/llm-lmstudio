@@ -9,6 +9,7 @@
 ### Changed
 - Conversation requests now consume the canonical `prompt.messages` chain instead of rebuilding history from `conversation.responses`.
 - Raised the minimum LLM version to 0.32.
+- Raised the minimum LM Studio version to 0.4.0, which introduced the native v1 REST API.
 - Automatic model loading now uses `POST /api/v1/models/load` instead of the `lms` CLI.
 - Automatic loading no longer supports `LLM_LMSTUDIO_TTL`. The new load endpoint does not accept a TTL parameter.
 

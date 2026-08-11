@@ -7,7 +7,9 @@
 
 This is a plugin for [Simon Willison's LLM command-line utility](https://llm.datasette.io/) that lets you talk to models running on a local [LMStudio](https://lmstudio.ai/) server.
 
-Version 0.3.0 and later require LLM 0.32 or newer and support its structured messages, response parts, and resumable tool chains.
+Version 0.3.0 and later require the `llm` Python package 0.32 or newer. This dependency provides structured messages, response parts, and resumable tool chains.
+
+The plugin also requires LM Studio 0.4.0 or newer. This version introduced the native v1 REST API.
 
 ## Installation
 
@@ -122,7 +124,7 @@ If a selected model is not loaded, the plugin loads it through `POST /api/v1/mod
 
 The endpoint returns after the load operation finishes. Set `LLM_LMSTUDIO_DEBUG=1` to show load timing and instance details.
 
-The plugin requires an LM Studio version that provides `/api/v1/models/load`.
+The plugin requires LM Studio 0.4.0 or newer. LM Studio 0.4.0 introduced the native v1 REST API at `/api/v1/*`.
 
 ## Development
 

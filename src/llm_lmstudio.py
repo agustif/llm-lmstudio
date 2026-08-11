@@ -1,6 +1,6 @@
 """
 llm‑lmstudio — enhanced plugin
-Requires llm >= 0.32 (structured messages API) and LM Studio ≥ 0.3.6.
+Requires llm >= 0.32 (structured messages API) and LM Studio >= 0.4.0.
 """
 
 from __future__ import annotations
