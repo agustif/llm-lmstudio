@@ -387,9 +387,8 @@ class LMStudioBaseModel:
             loaded_models = r.json().get("data", [])
             return any(m.get("id") == self.raw_id for m in loaded_models)
         except Exception as e:
-            print(
-                f"LMSTUDIO WARN: Could not check loaded models via /v1/models: {e}",
-                file=sys.stderr,
+            _debug(
+                f"LMSTUDIO DEBUG: Could not check loaded models via /v1/models: {e}"
             )
             return False  # Assume not loaded if check fails
 
@@ -829,7 +828,7 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
         if not self._is_model_loaded():
             if not self._attempt_load_model():
                 raise llm.ModelError(
-                    f"Failed to load model '{self.raw_id}' via 'lms load'. Please load it manually in LM Studio."
+                    f"Failed to load model '{self.raw_id}' through the LM Studio API."
                 )
             else:
                 time.sleep(1)  # Add a small delay after successful load confirmation
@@ -904,9 +903,7 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                     f"LMSTUDIO ERROR: Failed to decode JSON response: {e}",
                     file=sys.stderr,
                 )
-                print(
-                    f"LMSTUDIO DEBUG: Failing raw text was: {raw_text}", file=sys.stderr
-                )
+                _debug(f"LMSTUDIO DEBUG: Failing raw text was: {raw_text}")
                 raise llm.ModelError("Failed to decode JSON response from LM Studio.")
             except Exception as e:
                 print(
@@ -935,7 +932,7 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
         if not self._is_model_loaded():
             if not self._attempt_load_model():
                 raise llm.ModelError(
-                    f"Failed to load model '{self.raw_id}' via 'lms load'. Please load it manually in LM Studio."
+                    f"Failed to load model '{self.raw_id}' through the LM Studio API."
                 )
             else:
                 # No async sleep needed here as load itself is sync
@@ -971,9 +968,8 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                             f"LMSTUDIO ERROR: Failed to decode JSON response: {e}",
                             file=sys.stderr,
                         )
-                        print(
-                            f"LMSTUDIO DEBUG: Failing raw text was: {raw_text}",
-                            file=sys.stderr,
+                        _debug(
+                            f"LMSTUDIO DEBUG: Failing raw text was: {raw_text}"
                         )
                         raise llm.ModelError(
                             "Failed to decode JSON response from LM Studio."
