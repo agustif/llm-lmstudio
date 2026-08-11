@@ -25,9 +25,9 @@ Alternatively, `llm install llm-lmstudio` will also find and install the plugin.
 
 ## Usage
 
-First, you need LMStudio running with a model loaded. The plugin talks to the LMStudio server API, which usually runs at `http://localhost:1234`.
+First, start the LM Studio server. The API usually runs at `http://localhost:1234`.
 
-Once the server is up, the plugin should automatically find the models you have loaded in LMStudio. You can check this using the `llm models` command:
+The plugin finds downloaded models through the LM Studio API. A model does not need to be loaded first. You can check this using the `llm models | grep lmstudio` command:
 
 ```bash
 llm models list
@@ -118,7 +118,11 @@ llm -m lmstudio/your-model-id -o temperature 0.7 -o max_tokens 100 "Tell me a jo
 
 ## Automatic Model Loading
 
-If a selected model is not currently loaded in LM Studio, the plugin will attempt to automatically load it by invoking `lms load <model_id>` (if `lms` CLI is installed and configured). You may see progress messages from LM Studio in your terminal during this process.
+If a selected model is not loaded, the plugin loads it through `POST /api/v1/models/load`. The plugin does not require the `lms` CLI.
+
+The endpoint returns after the load operation finishes. Set `LLM_LMSTUDIO_DEBUG=1` to show load timing and instance details.
+
+The plugin requires an LM Studio version that provides `/api/v1/models/load`.
 
 ## Development
 
@@ -143,3 +147,6 @@ The asynchronous tests in `tests/test_llm_lmstudio_async.py` (among others) use 
 ## Missing features / Known Issues:
 
 - The reliability and capabilities of image support can vary significantly based on the specific VLM and its implementation within LM Studio.
+- The plugin does not support authentication for remote LM Studio servers. Community contributions for this feature are welcome.
+- Automatic loading does not support `LLM_LMSTUDIO_TTL`. The `/api/v1/models/load` endpoint does not accept a TTL parameter.
+

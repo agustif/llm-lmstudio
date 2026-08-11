@@ -9,11 +9,19 @@
 ### Changed
 - Conversation requests now consume the canonical `prompt.messages` chain instead of rebuilding history from `conversation.responses`.
 - Raised the minimum LLM version to 0.32.
+- Automatic model loading now uses `POST /api/v1/models/load` instead of the `lms` CLI.
+- Automatic loading no longer supports `LLM_LMSTUDIO_TTL`. The new load endpoint does not accept a TTL parameter.
 
 ### Fixed
+- Automatic loading now works when an API model ID differs from its full model path.
+- Model loading no longer writes CLI terminal control sequences to stderr.
 - System prompts are no longer repeated between tool-call rounds.
 - Assistant messages containing tool calls but no text are preserved with `content: null`, keeping tool-call and tool-result ordering valid.
 - Streaming requests continue through final usage-only chunks and record usage consistently in sync and async flows.
+
+### Known Issues
+- Authenticated remote LM Studio servers are not supported. Community contributions are welcome.
+
 
 ## v0.2.1 - 2025-12-06
 
