@@ -1,11 +1,11 @@
 import json
 import logging
 import os
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import llm
 import pytest
+from llm.parts import StreamEvent
 
 import llm_lmstudio
 
@@ -196,11 +196,10 @@ async def test_async_execute_streams_events_and_records_usage(monkeypatch):
         raw_id="test-model",
         api_path_prefix="/api/v0",
     )
-    prompt = SimpleNamespace(
+    prompt = llm.Prompt(
+        "Hello",
+        model,
         messages=[llm.user("Hello")],
-        options=None,
-        schema=None,
-        tools=[],
     )
     response = MagicMock()
 
@@ -214,7 +213,12 @@ async def test_async_execute_streams_events_and_records_usage(monkeypatch):
         )
     ]
 
-    assert [(event.type, event.chunk) for event in events] == [
+    stream_events: list[StreamEvent] = []
+    for event in events:
+        assert isinstance(event, StreamEvent)
+        stream_events.append(event)
+
+    assert [(event.type, event.chunk) for event in stream_events] == [
         ("reasoning", "Thinking"),
         ("text", "Done"),
     ]
@@ -300,15 +304,11 @@ async def test_async_execute_handles_tool_call_response(monkeypatch):
         )
     ]
 
-    prompt = SimpleNamespace(
-        prompt="Please check the weather in Berlin.",
+    prompt = llm.Prompt(
+        "Please check the weather in Berlin.",
+        async_model,
         messages=[llm.user("Please check the weather in Berlin.")],
-        attachments=[],
-        system=None,
-        options=None,
-        schema=None,
         tools=tools,
-        tool_results=[],
     )
 
     response = MagicMock()
@@ -320,11 +320,16 @@ async def test_async_execute_handles_tool_call_response(monkeypatch):
         )
     ]
 
-    assert [event.type for event in result] == [
+    stream_events: list[StreamEvent] = []
+    for event in result:
+        assert isinstance(event, StreamEvent)
+        stream_events.append(event)
+
+    assert [event.type for event in stream_events] == [
         "tool_call_name",
         "tool_call_args",
     ]
-    assert result[0].tool_call_id == "call_weather_async"
+    assert stream_events[0].tool_call_id == "call_weather_async"
     response.add_tool_call.assert_called_once()
     added_call = response.add_tool_call.call_args[0][0]
     assert added_call.name == "get_weather"
