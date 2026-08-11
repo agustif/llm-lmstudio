@@ -565,6 +565,23 @@ def test_execute_handles_tool_call_response(monkeypatch, vlm_model):
     assert final_message["content"] == "Please check the weather in Berlin."
 
 
+def test_set_usage_accepts_message_with_embedded_json(vlm_model):
+    response = MagicMock()
+    usage = {
+        "prompt_tokens": 42,
+        "completion_tokens": 5,
+        "message": 'Engine protocol error: {"error": {"message": "details"}}',
+    }
+
+    vlm_model._set_usage(response, usage)
+
+    response.set_usage.assert_called_once_with(
+        input=42,
+        output=5,
+        details={"message": usage["message"]},
+    )
+
+
 def test_three_step_tool_chain_sends_one_system_message(monkeypatch, vlm_model):
     """Regression test for system prompts repeated between tool rounds."""
     monkeypatch.setattr(

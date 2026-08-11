@@ -745,22 +745,6 @@ class LMStudioBaseModel:
             details=details or None,
         )
 
-        # LM Studio sometimes wraps the engine's JSON error in a string such
-        # as: "Engine protocol ...: {\"error\": {...}}".
-        message = details.get("message")
-        if isinstance(message, str):
-            json_start = message.find("{")
-            if json_start != -1:
-                try:
-                    nested = json.loads(message[json_start:])
-                except json.JSONDecodeError:
-                    pass
-                else:
-                    nested_details = self._error_details(nested)
-                    if nested_details:
-                        return nested_details
-        return details
-
 
 class LMStudioModel(LMStudioBaseModel, llm.Model):
     """Chat/completion model class."""
