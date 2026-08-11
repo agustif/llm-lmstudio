@@ -409,12 +409,10 @@ class LMStudioBaseModel:
             print(f"\rLoading model '{self.raw_id}'...", end="", file=sys.stderr)
 
         try:
-            # Assume the first server is the first server to load the model from
-            server = urlparse(SERVER_LIST[0])
+            server = urlparse(self.base)
             lms_load_cmd = [
                 "lms",
                 "load",
-                "--exact",
                 self.raw_id,
                 "--host",
                 str(server.hostname),

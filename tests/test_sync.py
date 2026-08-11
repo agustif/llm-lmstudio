@@ -977,7 +977,7 @@ def test_build_messages_preserves_reasoning_part(vlm_model, mock_prompt_factory)
     ]
 
 
-def test_attempt_load_model_respects_server_list(monkeypatch):
+def test_attempt_load_model_uses_model_key_and_respects_server(monkeypatch):
     monkeypatch.setattr(llm_lmstudio, "SERVER_LIST", ["https://10.0.0.5:9000"])
     monkeypatch.setattr(
         llm_lmstudio.LMStudioModel, "_is_model_loaded", lambda self: True
@@ -1011,7 +1011,6 @@ def test_attempt_load_model_respects_server_list(monkeypatch):
     assert captured_cmd["value"] == [
         "lms",
         "load",
-        "--exact",
         "test-raw",
         "--host",
         "10.0.0.5",
