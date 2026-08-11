@@ -12,6 +12,7 @@ import sys
 import time
 import uuid
 from collections.abc import AsyncGenerator, Iterable, Iterator
+from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 from urllib.parse import urlparse
 
@@ -258,6 +259,14 @@ def register_embedding_models(register):
 # --------------------------------------------------------------------------- #
 #  Model classes                                                              #
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class ChatRequest:
+    url: str
+    payload: dict[str, Any]
+    stream: bool
+    timeout: float
+
+
 class LMStudioBaseModel:
     """Base class for common LMStudio model attributes."""
 
@@ -295,6 +304,58 @@ class LMStudioBaseModel:
         top_p: float | None = Field(None, description="Nucleus sampling")
         max_tokens: int | None = Field(None, description="Maximum tokens")
         stop: list[str] | None = Field(None, description="Stop sequences")
+
+    def _prepare_chat_request(
+        self,
+        prompt: llm.Prompt,
+        stream: bool,
+        conversation=None,
+    ) -> ChatRequest:
+        has_schema = bool(getattr(prompt, "schema", None))
+        has_tools = bool(getattr(prompt, "tools", None))
+
+        url = (
+            f"{self.base}/v1/chat/completions"
+            if has_schema
+            else f"{self.base}{self.api_path_prefix}/chat/completions"
+        )
+        payload: dict[str, Any] = {
+            "model": self.raw_id,
+            "messages": self._build_messages(prompt, conversation),
+        }
+
+        if has_tools:
+            payload["tools"] = self._encode_tools(prompt.tools)
+
+        if prompt.options:
+            payload.update(prompt.options.model_dump(exclude_none=True))
+
+        if has_schema:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "llm_generated_schema",
+                    "schema": prompt.schema,
+                },
+            }
+            stream = False
+
+        payload["stream"] = stream
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
+
+        timeout = TIMEOUT
+        if has_schema:
+            timeout = max(TIMEOUT, 30.0)
+        elif has_tools:
+            timeout = max(TIMEOUT, 15.0)
+
+        return ChatRequest(
+            url=url,
+            payload=payload,
+            stream=stream,
+            timeout=timeout,
+        )
 
     def __str__(self):
         """Return the model ID with its display suffix for listings."""
@@ -769,82 +830,29 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                 time.sleep(1)  # Add a small delay after successful load confirmation
         # --- End Auto-loading Logic ---
 
-        # --- Prepare Payload --- #
-        # Determine the correct URL based on whether a schema is present
-        if hasattr(prompt, "schema") and prompt.schema:
-            # Force /v1 endpoint for schema requests as per LM Studio docs
-            url = f"{self.base}/v1/chat/completions"
-        else:
-            # Use the detected API path prefix for standard requests
-            url = f"{self.base}{self.api_path_prefix}/chat/completions"
-
-        messages = self._build_messages(prompt, conversation)
-        payload = {"model": self.raw_id, "messages": messages}
-
-        # Handle tools in prompt
-        if hasattr(prompt, "tools") and prompt.tools:
-            tools = self._encode_tools(prompt.tools)
-            payload["tools"] = tools
-
-        # Handle prompt.options (which should be an Options instance when called via model.prompt)
-        if prompt.options:
-            # Convert the Options object to a dictionary
-            options_dict = prompt.options.model_dump(exclude_none=True)
-            payload.update(options_dict)
-
-        # Handle --schema flag from llm
-        if hasattr(prompt, "schema") and prompt.schema:
-            # Use LM Studio's specific format for JSON schema output
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {  # Add the required outer object
-                    "name": "llm_generated_schema",  # Provide a default name
-                    "schema": prompt.schema,  # Nest the actual schema here
-                },
-            }
-            # Force stream=false when schema is used, as per LM Studio examples
-            stream = False  # Override the input stream parameter
-
-        # Set stream value in payload *after* potential override
-        if stream:
-            payload["stream"] = True
-            # LM Studio only sends the final usage chunk if we ask for it
-            payload["stream_options"] = {"include_usage": True}
-        else:
-            # Ensure stream: false is explicitly set if needed
-            payload["stream"] = False
-
-        # --- End Prepare Payload --- #
+        request = self._prepare_chat_request(prompt, stream, conversation)
+        stream = request.stream
 
         # --- Execute API Call --- #
-        # Determine appropriate timeout
-        request_timeout = TIMEOUT  # Start with default
-        if hasattr(prompt, "schema") and prompt.schema:
-            # Increase timeout for potentially slower schema requests
-            request_timeout = max(
-                TIMEOUT, 30.0
-            )  # Use 30s or default, whichever is larger
-        elif hasattr(prompt, "tools") and prompt.tools:
-            # Increase timeout for tool requests as they can be slower
-            request_timeout = max(
-                TIMEOUT, 15.0
-            )  # Use 15s or default, whichever is larger
-
         try:
-            # Use the determined timeout value
-            r = requests.post(url, json=payload, stream=stream, timeout=request_timeout)
+            r = requests.post(
+                request.url,
+                json=request.payload,
+                stream=request.stream,
+                timeout=request.timeout,
+            )
             r.raise_for_status()
         except requests.exceptions.Timeout:
             # Specific handling for timeout error
             if hasattr(prompt, "tools") and prompt.tools:
                 raise llm.ModelError(
-                    f"LM Studio request with tools timed out after {request_timeout} seconds. "
+                    f"LM Studio request with tools timed out after {request.timeout} seconds. "
                     f"This model may not properly support tools, or the request is taking too long. "
                     f"Try increasing LMSTUDIO_TIMEOUT environment variable or using a different model."
                 )
             else:
                 raise llm.ModelError(
-                    f"LM Studio request timed out after {request_timeout} seconds. "
+                    f"LM Studio request timed out after {request.timeout} seconds. "
                     f"Try increasing LMSTUDIO_TIMEOUT environment variable or using a faster model."
                 )
         except requests.RequestException as e:
@@ -862,7 +870,7 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
 
             if is_model_not_found:
                 raise llm.ModelError(
-                    f"Model '{self.raw_id}' not found by LM Studio server at {url}, even after attempting auto-load. Is it correctly specified and loadable?"
+                    f"Model '{self.raw_id}' not found by LM Studio server at {request.url}, even after attempting auto-load. Is it correctly specified and loadable?"
                 )
             else:
                 raise llm.ModelError(f"LM Studio request failed: {e}")
@@ -1007,58 +1015,16 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                 pass
         # --- End Auto-loading Logic ---
 
-        # --- Prepare Payload (same logic as sync) ---
-        if hasattr(prompt, "schema") and prompt.schema:
-            url = f"{self.base}/v1/chat/completions"
-        else:
-            url = f"{self.base}{self.api_path_prefix}/chat/completions"
-
-        messages = self._build_messages(prompt, conversation)
-        payload = {"model": self.raw_id, "messages": messages}
-
-        # Handle tools in prompt
-        if hasattr(prompt, "tools") and prompt.tools:
-            tools = self._encode_tools(prompt.tools)
-            payload["tools"] = tools
-
-        # Handle prompt.options (which should be an Options instance when called via model.prompt)
-        if prompt.options:
-            # Convert the Options object to a dictionary
-            options_dict = prompt.options.model_dump(exclude_none=True)
-            payload.update(options_dict)
-
-        # Handle --schema flag from llm
-        if hasattr(prompt, "schema") and prompt.schema:
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "llm_generated_schema",
-                    "schema": prompt.schema,
-                },
-            }
-            stream = False
-
-        if stream:
-            payload["stream"] = True
-            # LM Studio only sends the final usage chunk if we ask for it
-            payload["stream_options"] = {"include_usage": True}
-        else:
-            payload["stream"] = False
-        # --- End Prepare Payload ---
-
-        # Determine appropriate timeout
-        request_timeout = TIMEOUT
-        if hasattr(prompt, "schema") and prompt.schema:
-            request_timeout = max(TIMEOUT, 30.0)
-        elif hasattr(prompt, "tools") and prompt.tools:
-            # Increase timeout for tool requests as they can be slower
-            request_timeout = max(TIMEOUT, 15.0)
+        request = self._prepare_chat_request(prompt, stream, conversation)
+        stream = request.stream
 
         # --- Execute API Call (Async) ---
         try:
-            async with httpx.AsyncClient(timeout=request_timeout) as client:
-                if stream:
-                    async with client.stream("POST", url, json=payload) as r:
+            async with httpx.AsyncClient(timeout=request.timeout) as client:
+                if request.stream:
+                    async with client.stream(
+                        "POST", request.url, json=request.payload
+                    ) as r:
                         r.raise_for_status()
                         current_tool_calls = []
                         chunks = []
@@ -1149,7 +1115,7 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                                     )
 
                 else:  # Non-streaming async
-                    r = await client.post(url, json=payload)
+                    r = await client.post(request.url, json=request.payload)
                     r.raise_for_status()
                     try:
                         raw_text = r.text
@@ -1202,13 +1168,13 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
         except httpx.TimeoutException:
             if hasattr(prompt, "tools") and prompt.tools:
                 raise llm.ModelError(
-                    f"LM Studio async request with tools timed out after {request_timeout} seconds. "
+                    f"LM Studio async request with tools timed out after {request.timeout} seconds. "
                     f"This model may not properly support tools, or the request is taking too long. "
                     f"Try increasing LMSTUDIO_TIMEOUT environment variable or using a different model."
                 )
             else:
                 raise llm.ModelError(
-                    f"LM Studio async request timed out after {request_timeout} seconds. "
+                    f"LM Studio async request timed out after {request.timeout} seconds. "
                     f"Try increasing LMSTUDIO_TIMEOUT environment variable."
                 )
         except httpx.RequestError as e:

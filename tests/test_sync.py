@@ -565,6 +565,47 @@ def test_execute_handles_tool_call_response(monkeypatch, vlm_model):
     assert final_message["content"] == "Please check the weather in Berlin."
 
 
+def test_prepare_chat_request_for_streaming(vlm_model, mock_prompt_factory):
+    prompt = mock_prompt_factory(prompt_text="Hello")
+    prompt.schema = None
+    prompt.tools = []
+
+    request = vlm_model._prepare_chat_request(prompt, stream=True)
+
+    assert request.url == "http://localhost:1234/v1/chat/completions"
+    assert request.stream is True
+    assert request.timeout == llm_lmstudio.TIMEOUT
+    assert request.payload == {
+        "model": "test-vlm-raw-id",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+
+
+def test_prepare_chat_request_for_schema_forces_non_streaming(
+    vlm_model, mock_prompt_factory
+):
+    prompt = mock_prompt_factory(prompt_text="Hello")
+    prompt.schema = {"type": "object"}
+    prompt.tools = []
+
+    request = vlm_model._prepare_chat_request(prompt, stream=True)
+
+    assert request.url == "http://localhost:1234/v1/chat/completions"
+    assert request.stream is False
+    assert request.timeout == max(llm_lmstudio.TIMEOUT, 30.0)
+    assert request.payload["stream"] is False
+    assert "stream_options" not in request.payload
+    assert request.payload["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "llm_generated_schema",
+            "schema": prompt.schema,
+        },
+    }
+
+
 def test_set_usage_accepts_message_with_embedded_json(vlm_model):
     response = MagicMock()
     usage = {
