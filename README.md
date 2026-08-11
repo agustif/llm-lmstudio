@@ -152,3 +152,7 @@ The asynchronous tests in `tests/test_llm_lmstudio_async.py` (among others) use 
 - The plugin does not support authentication for remote LM Studio servers. Community contributions for this feature are welcome.
 - Automatic loading does not support `LLM_LMSTUDIO_TTL`. The `/api/v1/models/load` endpoint does not accept a TTL parameter.
 
+## Future work
+
+- Migrate `manual-testing.md` to an opt-in Pytest acceptance suite that runs against a live LM Studio server. Keep these slower tests out of normal `pytest` runs.
+

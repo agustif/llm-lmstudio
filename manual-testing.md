@@ -1,464 +1,285 @@
 # Manual testing against LM Studio
 
-Manual test session for the LLM 0.32 upgrade, run against `qwen/qwen3.5-9b` served
-locally by LM Studio. LLM version 0.32.
+*2026-08-11T08:48:12Z by Showboat 0.6.1*
+<!-- showboat-id: 6416c594-b38c-4ec6-95e6-f3b92429c454 -->
 
-Reasoning traces are streamed to standard error by LLM 0.32, so most commands below
-use `-R/--hide-reasoning` to keep the output readable. Where reasoning is relevant it
-is shown.
+This session tests llm-lmstudio against LM Studio 0.4.20 or newer. It uses minicpm5-1b as the small GGUF model and prism-ml/bonsai-27b as the smallest installed MLX model.
 
-## Model registration
+The commands use the project virtual environment directly because this document must also work in non-interactive shells.
 
-```bash
-uv run llm models list | grep -i lmstudio
-```
-
-> lmstudio/meta/muse-glimmer ● 👁 ⚒
-> lmstudio/qwen/qwen3.5-9b ● 👁 ⚒
-> lmstudio/qwen/qwen3.5-9b:2 ● 👁 ⚒
-> lmstudio/ternary-bonsai-27b 👁 ⚒
-> lmstudio/bonsai-27b-mlx 👁 ⚒
-> lmstudio/ornith-1.0-35b ⚒
-> lmstudio/google/gemma-4-12b-qat 👁 ⚒
-> lmstudio/north-mini-code-1.0 ⚒
-> lmstudio/google/gemma-4-12b 👁 ⚒
-> lmstudio/granite-4.1-30b ⚒
-> lmstudio/granite-4.1-8b-fp8 ⚒
-> lmstudio/granite-4.1-3b ⚒
-> lmstudio/qwen3.6-35b-a3b 👁 ⚒
-> lmstudio/minimax-m2.7 ⚒
-> lmstudio/google/gemma-4-26b-a4b 👁 ⚒
-> lmstudio/google/gemma-4-31b 👁 ⚒
-> lmstudio/google/gemma-4-e4b 👁 ⚒
-> lmstudio/google/gemma-4-e2b 👁 ⚒
-> lmstudio/qwen3.5-27b-claude-4.6-opus-reasoning-distilled-v2 👁 ⚒
-> lmstudio/openai/gpt-oss-120b ⚒
-> lmstudio/qwen/qwen3-coder-next ⚒
-> lmstudio/qwen3.5-4b 👁 ⚒
-> lmstudio/qwen/qwen3.5-35b-a3b 👁 ⚒
-
-Options and advertised features for the model under test:
+## Environment and model discovery
 
 ```bash
-uv run llm models list --options -m lmstudio/qwen/qwen3.5-9b
+.venv/bin/llm --version
 ```
 
-> lmstudio/qwen/qwen3.5-9b ● 👁 ⚒
->
-> &nbsp;&nbsp;Options:
->
-> &nbsp;&nbsp;&nbsp;&nbsp;temperature: float
-> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Sampling temperature
->
-> &nbsp;&nbsp;&nbsp;&nbsp;top_p: float
-> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Nucleus sampling
->
-> &nbsp;&nbsp;&nbsp;&nbsp;max_tokens: int
-> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Maximum tokens
->
-> &nbsp;&nbsp;&nbsp;&nbsp;stop: array
-> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Stop sequences
->
-> &nbsp;&nbsp;Attachment types:
->
-> &nbsp;&nbsp;&nbsp;&nbsp;image/gif, image/jpeg, image/png, image/webp
->
-> &nbsp;&nbsp;Features:
->
-> &nbsp;&nbsp;- streaming
-> &nbsp;&nbsp;- schemas
-> &nbsp;&nbsp;- tools
-> &nbsp;&nbsp;- async
-
-## Basic prompting
+```output
+llm, version 0.32
+```
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R 'What is the capital of France? One word.'
+.venv/bin/llm models list | rg "^lmstudio/"
 ```
 
-> Paris
+```output
+lmstudio/minicpm5-1b ● ⚒
+lmstudio/prism-ml/bonsai-27b ● 👁 ⚒
+lmstudio/meta/muse-glimmer 👁 ⚒
+lmstudio/ornith-1.0-35b ⚒
+lmstudio/google/gemma-4-26b-a4b 👁 ⚒
+lmstudio/google/gemma-4-31b 👁 ⚒
+lmstudio/qwen/qwen3.6-35b-a3b 👁 ⚒
+lmstudio/qwen/qwen3.6-27b 👁 ⚒
+lmstudio/google/gemma-4-e4b 👁 ⚒
+lmstudio/google/gemma-4-e2b 👁 ⚒
+```
 
-A system prompt, with streaming disabled:
+The model list contains both test models. LM Studio reports vision and tool capabilities with display suffixes.
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b --no-stream -R -s 'You are a pirate. Always answer in pirate speak.' 'What is 2+2?'
+.venv/bin/llm models list --options -m lmstudio/minicpm5-1b
 ```
 
-> Arrr! Avast ye, matey! Two plus two be four, like four doubloons on the deck!
-
-## Reasoning
-
-Without `-R`, reasoning is streamed to standard error, so it does not interfere with
-piping the response on standard output. Here standard error is discarded:
+```output
+lmstudio/minicpm5-1b ● ⚒
+  Options:
+    temperature: float
+      Sampling temperature
+    top_p: float
+      Nucleus sampling
+    max_tokens: int
+      Maximum tokens
+    stop: array
+      Stop sequences
+  Attachment types:
+    image/gif, image/jpeg, image/png, image/webp
+  Features:
+  - streaming
+  - schemas
+  - tools
+  - async
+```
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b 'Invent a haunted house' --schema 'name, year_built int, one_sentence_bio' 2>/dev/null
+.venv/bin/llm models list --options -m lmstudio/prism-ml/bonsai-27b
 ```
 
-> { "name": "The House of Unfinished Sentences","year_built": 1893,"one_sentence_bio": "A Victorian manor where words that were never spoken become trapped in the plaster, and if you speak too loudly, the house will swallow your voice to replace it with its own." }
+```output
+lmstudio/prism-ml/bonsai-27b ● 👁 ⚒
+  Options:
+    temperature: float
+      Sampling temperature
+    top_p: float
+      Nucleus sampling
+    max_tokens: int
+      Maximum tokens
+    stop: array
+      Stop sequences
+  Attachment types:
+    image/gif, image/jpeg, image/png, image/webp
+  Features:
+  - streaming
+  - schemas
+  - tools
+  - async
+```
 
-Reasoning is stored as its own part in the 0.32 log schema, under a `## Reasoning`
-heading, separate from `## Response`:
+## Automatic loading and basic prompting
+
+This check unloads the GGUF model first. The following llm request must load it through POST /api/v1/models/load before generation.
 
 ```bash
-uv run llm logs -c -n 1
+lms unload minicpm5-1b && .venv/bin/llm -m lmstudio/minicpm5-1b -R "Reply with exactly: GGUF_OK"
 ```
 
-> \# 2026-08-10T19:53:48    conversation: 01kzpkt270pbvzk71abqtq3svw id: 01kzpkt271ecnjs6m565jt1z1x
->
-> Model: **lmstudio/qwen/qwen3.5-9b** (resolved: **qwen/qwen3.5-9b**)
->
-> \## Prompt
->
-> My favourite animal is the pelican. Remember that. Reply with just "OK".
->
-> \## Reasoning
->
-> Thinking Process:
->
-> 1.  **Analyze the Request:**
->     *   User statement: "My favourite animal is the pelican. Remember that."
->     *   Constraint: "Reply with just 'OK'."
->     *   Goal: Acknowledge the information without adding extra text, adhering strictly to the constraint.
->
-> 2.  **Check Constraints:**
->     *   Must reply *only* with "OK".
->     *   No explanations, no greetings, no confirmations beyond that specific string.
->
-> 3.  **Formulate Output:**
->     *   String: "OK"
->
-> 4.  **Final Review:**
->     *   Does it meet the constraint? Yes.
->     *   Is it accurate to the instruction? Yes.
->
-> 5.  **Execute:** Output "OK".
->
-> \## Response
->
-> OK
+```output
+Model "minicpm5-1b" unloaded.
+GGUF_OK
+```
 
-## Schemas
-
-Using the concise schema syntax:
+This check repeats the same path with the installed MLX model.
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b 'Invent a cool dog' --schema 'name, age int, one_sentence_bio' 2>/dev/null
+lms unload prism-ml/bonsai-27b && .venv/bin/llm -m lmstudio/prism-ml/bonsai-27b -R "Reply with exactly: MLX_OK"
 ```
 
-> {
->   "name": "The Spectre Hound",
->   "age": 3,
->   "one_sentence_bio": "A sleek, cyberpunk-inspired breed with adaptive fur and silent-paw capabilities designed for high-tech urban environments."
-> }
+```output
+Model "prism-ml/bonsai-27b" unloaded.
 
-Multiple items with `--schema-multi`:
+
+MLX_OK
+```
+
+## Prompt modes and structured output
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b --schema-multi 'name, species, weight_kg float' 'Invent 3 pelicans' 2>/dev/null
+set -o pipefail; .venv/bin/llm -m lmstudio/minicpm5-1b --no-stream -R -s "Answer with one word only." "What is the capital of France?" | grep -ixq 'Paris' && echo 'basic prompt: OK'
 ```
 
-> {
->     "items": [
->         {
->             "name": "Barnaby the Bottomless",
->             "species": "Great White Pelican (Modified)",
->             "weight_kg": 1450.5
->         },
->         {
->             "name": "Inkwell the Messenger",
->             "species": "Pacific Pink-backed Pelican",
->             "weight_kg": 850.2
->         },
->         {
->             "name": "Sonar-Beak Whistler",
->             "species": "Horned Pelican (Fictional Variant)",
->             "weight_kg": 620.1
->         }
->     ]
-> }
-
-## Attachments
-
-An image fetched from a URL:
+```output
+basic prompt: OK
+```
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R 'Describe this image in two sentences.' -a https://static.simonwillison.net/static/2025/two-pelicans.jpg
+set -o pipefail; .venv/bin/llm -m lmstudio/minicpm5-1b -R --schema 'name, age int' 'Invent one dog. Use a short name.' | jq -e 'type == "object" and keys == ["age", "name"] and (.name | type == "string") and (.age | type == "number") and (.age == (.age | floor))' >/dev/null && echo 'schema shape: OK'
 ```
 
-> Two brown pelicans soar through a clear blue sky with their massive wings fully spread to catch the air. One bird flies slightly lower in the foreground, while its companion glides just above it towards the right side of the frame.
+```output
+schema shape: OK
+```
 
-The same image from a local file, exercising the base64 path:
+## Tool calling
 
 ```bash
-curl -so /tmp/two-pelicans.jpg https://static.simonwillison.net/static/2025/two-pelicans.jpg
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R -a /tmp/two-pelicans.jpg 'What species of bird is this? Two words.'
+set -o pipefail; .venv/bin/llm -m lmstudio/prism-ml/bonsai-27b -R --functions $'def multiply(x: int, y: int) -> int:\n    """Multiply two integers."""\n    return x * y' --td 'Use the tool to calculate 123 * 456. Give only the result.' 2>&1 | awk '/Tool call: multiply/ { tool = 1 } /56088/ { result = 1 } END { if (!tool || !result) exit 1; print "tool call: OK" }'
 ```
 
-> Brown Pelican
+```output
+tool call: OK
+```
 
-## Conversations with `llm -c`
+## Conversation continuation
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R 'My favourite animal is the pelican. Remember that. Reply with just "OK".'
+set -o pipefail; .venv/bin/llm -m lmstudio/prism-ml/bonsai-27b -R 'Remember the code word cobalt. Reply with exactly: OK' | grep -ixq 'OK' && echo 'conversation started: OK'
 ```
 
-> OK
+```output
+conversation started: OK
+```
 
 ```bash
-uv run llm -c -R 'What is my favourite animal? Answer in one word.'
+set -o pipefail; .venv/bin/llm -c -R 'What code word did I ask you to remember? Reply with one word.' | grep -ixq 'cobalt' && echo 'conversation recall: OK'
 ```
 
-> Pelican
+```output
+conversation recall: OK
+```
+
+## Embeddings
 
 ```bash
-uv run llm -c -R 'Now name three facts about that animal, very briefly.'
+.venv/bin/llm embed-models | rg '^LMStudioEmbeddingModel:'
 ```
 
-> 1. Massive throat pouch traps fish.
-> 2. Wingspans often exceed two meters.
-> 3. Beaks can hold over 10 liters of water.
+```output
+LMStudioEmbeddingModel: text-embedding-nomic-embed-text-v1.5@q4_k_m
+LMStudioEmbeddingModel: text-embedding-qwen3-vl-reranker-2b
+LMStudioEmbeddingModel: text-embedding-qwen3-vl-embedding-2b
+LMStudioEmbeddingModel: text-embedding-jina-embeddings-v4-text-retrieval
+LMStudioEmbeddingModel: text-embedding-mxbai-embed-large-v1
+LMStudioEmbeddingModel: text-embedding-nomic-embed-text-v1.5@q8_0
+```
 
-## Tools
-
-Two of the default tools that ship with LLM, called in sequence within a single
-prompt:
+The base64 length gives a concise check that the embedding endpoint returned a non-empty vector.
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R --tool llm_version --tool llm_time 'What version of LLM is installed, and what time is it? Use your tools.' --td
+set -o pipefail; .venv/bin/llm embed -m text-embedding-nomic-embed-text-v1.5@q4_k_m -c pelican -f base64 | tr -d '\n' | wc -c | grep -Eq '^[[:space:]]*4096$' && echo 'embedding: OK'
 ```
 
-> Tool call: llm_version({})
-> &nbsp;&nbsp;0.32
->
-> Tool call: llm_time({})
-> &nbsp;&nbsp;{
-> &nbsp;&nbsp;&nbsp;&nbsp;"utc_time": "2026-08-10 19:54:35 UTC",
-> &nbsp;&nbsp;&nbsp;&nbsp;"utc_time_iso": "2026-08-10T19:54:35.714014+00:00",
-> &nbsp;&nbsp;&nbsp;&nbsp;"local_timezone": "PDT",
-> &nbsp;&nbsp;&nbsp;&nbsp;"local_time": "2026-08-10 12:54:35",
-> &nbsp;&nbsp;&nbsp;&nbsp;"timezone_offset": "UTC-7:00",
-> &nbsp;&nbsp;&nbsp;&nbsp;"is_dst": true
-> &nbsp;&nbsp;}
->
-> Here's the information you requested:
->
-> **LLM Version:** 0.32
->
-> **Current Time:**
-> - **Local Time (PDT):** August 10, 2026 at 12:54:35
-> - **UTC Time:** August 10, 2026 at 19:54:35 UTC
-> - **Timezone Offset:** UTC-7:00
-> - **Daylight Saving Time:** Currently active
+```output
+embedding: OK
+```
 
-A custom Python function tool:
+## Automated test suite
 
 ```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R --functions '
-def multiply(x: int, y: int) -> int:
-    """Multiply two numbers."""
-    return x * y
-' 'what is 34234 * 213345?' --td
+.venv/bin/pytest -q >/dev/null && echo 'tests passed'
 ```
 
-> Tool call: multiply({'x': 34234, 'y': 213345})
-> &nbsp;&nbsp;7303652730
->
-> 34234 × 213345 = 7,303,652,730
-
-A longer tool chain against a SQLite database, which also exercises tool errors being
-fed back to the model and parallel tool calls within a single response. The database
-was created with four pelicans, with a `weight_kg` column:
-
-```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R --functions '
-import sqlite3
-
-def list_tables() -> str:
-    "List tables in the pelicans database"
-    db = sqlite3.connect("/tmp/pelicans.db")
-    return str(db.execute("select name from sqlite_master where type=\"table\"").fetchall())
-
-def query(sql: str) -> str:
-    "Run a SQL SELECT query against the pelicans database and return results"
-    db = sqlite3.connect("/tmp/pelicans.db")
-    return str(db.execute(sql).fetchall())
-' 'How many pelicans are in the database, and which one is heaviest? Explore the schema first.' --td --cl 8
+```output
+tests passed
 ```
 
-> Tool call: query({'sql': 'SELECT id, name, species, weight FROM pelicans ORDER BY weight DESC LIMIT 1;'})
-> &nbsp;&nbsp;Error: no such column: weight
-> &nbsp;&nbsp;Exception: no such column: weight
->
-> Tool call: query({'sql': 'SELECT * FROM pelicans LIMIT 1;'})
-> &nbsp;&nbsp;[(1, 'Percy', 'Brown Pelican', 3.6)]
->
-> Tool call: query({'sql': 'PRAGMA table_info(pelicans);'})
-> &nbsp;&nbsp;[(0, 'id', 'INTEGER', 0, None, 1), (1, 'name', 'TEXT', 0, None, 0), (2, 'species', 'TEXT', 0, None, 0), (3, 'weight_kg', 'REAL', 0, None, 0)]
->
-> Tool call: query({'sql': 'SELECT id, name, species, weight_kg FROM pelicans ORDER BY weight_kg DESC LIMIT 1;'})
-> &nbsp;&nbsp;[(4, 'Penny', 'Dalmatian Pelican', 12.8)]
->
-> Based on my exploration of the database schema, here's what I found:
->
-> \## Database Schema
-> The `pelicans` table has the following structure:
-> - **id** (INTEGER) - Unique identifier
-> - **name** (TEXT) - Pelican name
-> - **species** (TEXT) - Pelican species type
-> - **weight_kg** (REAL) - Weight in kilograms
->
-> \## Answers to Your Questions
->
-> \### 1. How many pelicans are in the database?
-> **4 pelicans** are stored in the database.
->
-> \### 2. Which one is heaviest?
-> The heaviest pelican is **Penny**, a **Dalmatian Pelican** weighing **12.8 kg**.
+## Async Python acceptance test
 
-Tool results carry across a conversation continuation. First a tool call:
+This live Python test covers the async integration boundary. It uses GGUF for streaming, usage, and structured output, then MLX for a tool chain.
 
-```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R --tool llm_time 'What time is it? Use the tool.' --td
-```
+```.venv/bin/python
+import asyncio
+import json
 
-> **UTC Time:** August 10, 2026 at 8:04:10 PM
->
-> Yes, daylight saving time is currently in effect.
+import llm
 
-Then a follow-up that depends on the earlier tool result:
-
-```bash
-uv run llm -c -R 'What timezone did you just report? One word.'
-```
-
-> PDT
-
-## Token usage
-
-This uncovered a bug, fixed in this branch. LM Studio only emits the final usage
-chunk when the request sets `stream_options: {"include_usage": true}`, which the
-plugin was not sending, so streamed responses recorded no token counts at all.
-
-Before the fix, streamed responses reported nothing:
-
-```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R -u 'Count to 3'
-```
-
-> 1, 2, 3Token usage:
-
-After the fix:
-
-```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R -u 'Count to 3'
-```
-
-> 1, 2, 3Token usage: 14 input, 251 output, {"completion_tokens_details": {"reasoning_tokens": 241}}
-
-Streaming with tools, which also reported nothing before the fix:
-
-```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R -u --tool llm_version 'What llm version? Use the tool.'
-```
-
-> Token usage: 362 input, 45 output, {"completion_tokens_details": {"reasoning_tokens": 30}}
-
-Non-streaming was unaffected and still works:
-
-```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R -u --no-stream 'Count to 3'
-```
-
-> Token usage: 14 input, 307 output, {"completion_tokens_details": {"reasoning_tokens": 297}}
->
-> 1, 2, 3
-
-Schemas force `stream=false` internally, so these already reported usage:
-
-```bash
-uv run llm -m lmstudio/qwen/qwen3.5-9b -R -u --schema 'n int' 'pick a number'
-```
-
-> { "n": 42 }Token usage: 13 input, 1,216 output, {"completion_tokens_details": {"reasoning_tokens": 1184}}
-
-## Async
-
-The async model was exercised with a script covering streaming, schemas, tools,
-conversations, attachments and usage:
-
-```bash
-uv run python async_test.py
-```
-
-> model: lmstudio/qwen/qwen3.5-9b | async: True
-> streamed chunks: 2 -> Blue Jay
-> schema: {
->     "name": "The Prism-Pelican (*Pelecanus refracta*)",
->     "weight_kg": 8.5
-> }
-> tool result: The wingspan of a pelican is 3.5 metres.
-> conversation recall: Percy
-> vision: 2
-> usage: Usage(input=18, output=1906, details={'completion_tokens_details': {'reasoning_tokens': 1901}})
-
-The script:
-
-```python
-import asyncio, llm
 
 async def main():
-    model = llm.get_async_model("lmstudio/qwen/qwen3.5-9b")
-    print("model:", model.model_id, "| async:", isinstance(model, llm.AsyncModel))
+    gguf = llm.get_async_model("lmstudio/minicpm5-1b")
+    print("gguf async:", isinstance(gguf, llm.AsyncModel))
 
-    # 1. streaming async text
-    resp = model.prompt("Name one bird. Two words max.", hide_reasoning=True)
-    chunks = [c async for c in resp]
-    print("streamed chunks:", len(chunks), "->", "".join(chunks).strip())
+    response = gguf.prompt(
+        "Reply with one short greeting.",
+        hide_reasoning=True,
+    )
+    chunks = [chunk async for chunk in response]
+    text = "".join(chunks).strip()
+    assert text
+    print("stream: OK")
 
-    # 2. async schema
-    r2 = await model.prompt(
-        "Invent a pelican",
-        schema=llm.schema_dsl("name, weight_kg float"),
+    usage = await response.usage()
+    assert usage.input is not None and usage.input > 0
+    assert usage.output is not None and usage.output > 0
+    print("usage recorded:", usage.input > 0 and usage.output > 0)
+
+    schema_text = await gguf.prompt(
+        "Return a dog named Pip who is 4 years old.",
+        schema=llm.schema_dsl("name, age int"),
         hide_reasoning=True,
     ).text()
-    print("schema:", r2.strip())
+    schema_result = json.loads(schema_text)
+    assert set(schema_result) == {"name", "age"}
+    assert isinstance(schema_result["name"], str)
+    assert isinstance(schema_result["age"], int)
+    print("schema: OK")
 
-    # 3. async tool calling
-    def wingspan(name: str) -> str:
-        "Return the wingspan of a bird in metres"
-        return "3.5 metres"
+    mlx = llm.get_async_model("lmstudio/prism-ml/bonsai-27b")
+    print("mlx async:", isinstance(mlx, llm.AsyncModel))
 
-    chain = model.chain("What is the wingspan of a pelican? Use the tool.",
-                        tools=[wingspan], hide_reasoning=True)
-    text = await chain.text()
-    print("tool result:", text.strip()[:120])
+    def multiply(x: int, y: int) -> int:
+        """Multiply two integers."""
+        return x * y
 
-    # 4. async conversation memory
-    conv = model.conversation()
-    await conv.prompt("My bird is named Percy. Reply 'OK'.", hide_reasoning=True).text()
-    out = await conv.prompt("What is my bird's name? One word.", hide_reasoning=True).text()
-    print("conversation recall:", out.strip())
-
-    # 5. async attachment
-    r5 = await model.prompt(
-        "How many birds in this image? Answer with a digit only.",
-        attachments=[llm.Attachment(url="https://static.simonwillison.net/static/2025/two-pelicans.jpg")],
+    result = await mlx.chain(
+        "Use the tool to calculate 123 * 456. Give only the result.",
+        tools=[multiply],
         hide_reasoning=True,
     ).text()
-    print("vision:", r5.strip())
+    assert "56088" in result
+    print("tool result: OK")
 
-    usage = await resp.usage()
-    print("usage:", usage)
 
 asyncio.run(main())
+
 ```
 
-## Test suite
+```output
+gguf async: True
+stream: OK
+usage recorded: True
+schema: OK
+mlx async: True
+tool result: OK
+```
+
+## Vision attachment
+
+This check uses a local 320 px copy of Crested Tern Tasmania (edit).jpg from Wikimedia Commons.
 
 ```bash
-uv run pytest -q
+set -o pipefail; .venv/bin/llm -m lmstudio/prism-ml/bonsai-27b -R -a manual-testing-assets/crested-tern.jpg 'Is the primary subject of this image a bird? Reply with exactly YES or NO.' | grep -ixq 'YES' && echo 'vision: OK'
 ```
 
-> .........................                                                [100%]
-> 25 passed in 0.78s
+```output
+vision: OK
+```
+
+## Synchronous streaming usage
+
+This live check verifies that a synchronous streamed response includes positive input and output token counts.
+
+```bash
+set -o pipefail; .venv/bin/llm -m lmstudio/prism-ml/bonsai-27b -R -u 'Reply with one short greeting.' 2>&1 | awk '/Token usage: [1-9][0-9]* input, [1-9][0-9]* output/ { usage = 1 } END { if (!usage) exit 1; print "streaming usage: OK" }'
+```
+
+```output
+streaming usage: OK
+```
