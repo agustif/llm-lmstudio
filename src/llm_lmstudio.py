@@ -905,12 +905,6 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                 )
                 _debug(f"LMSTUDIO DEBUG: Failing raw text was: {raw_text}")
                 raise llm.ModelError("Failed to decode JSON response from LM Studio.")
-            except Exception as e:
-                print(
-                    f"LMSTUDIO ERROR: Unexpected error processing response: {e}",
-                    file=sys.stderr,
-                )
-                raise llm.ModelError("Unexpected error processing LM Studio response.")
 
             yield from self._process_non_streaming_response(response, res)
 
@@ -974,14 +968,6 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                         raise llm.ModelError(
                             "Failed to decode JSON response from LM Studio."
                         )
-                    except Exception as e:
-                        print(
-                            f"LMSTUDIO ERROR: Unexpected error processing response: {e}",
-                            file=sys.stderr,
-                        )
-                        raise llm.ModelError(
-                            "Unexpected error processing LM Studio response."
-                        )
 
                     for event in self._process_non_streaming_response(response, res):
                         yield event
@@ -1023,6 +1009,6 @@ class LMStudioEmbeddingModel(llm.EmbeddingModel):
 
             return (cast(list[float], item["embedding"]) for item in data["data"])
         except requests.RequestException as e:
-            raise llm.ModelError(f"LM Studio embeddings request failed: {e}")
-        except Exception as e:
-            raise llm.ModelError(f"Unexpected embeddings response: {e}")
+            raise llm.ModelError(f"LM Studio embeddings request failed: {e}") from e
+        except (KeyError, TypeError) as e:
+            raise llm.ModelError(f"Unexpected embeddings response: {e}") from e
