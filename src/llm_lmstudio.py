@@ -1,6 +1,6 @@
 """
 llm‑lmstudio — enhanced plugin
-Requires llm >= 0.23 (attachments API) and LM Studio ≥ 0.3.6 for /api/v0/models.
+Requires llm >= 0.32 (structured messages API) and LM Studio ≥ 0.3.6.
 """
 
 from __future__ import annotations
@@ -10,18 +10,22 @@ import os
 import subprocess
 import sys
 import time
-from typing import (
-    Any,
-    AsyncGenerator,
-    Iterable,
-    Iterator,
-    cast,
-)
+import uuid
+from collections.abc import AsyncGenerator, Iterable, Iterator
+from typing import Any, ClassVar, cast
 from urllib.parse import urlparse
 
 import httpx
 import llm
 import requests
+from llm.parts import (
+    AttachmentPart,
+    ReasoningPart,
+    StreamEvent,
+    TextPart,
+    ToolCallPart,
+    ToolResultPart,
+)
 from pydantic import Field
 
 # --------------------------------------------------------------------------- #
@@ -32,7 +36,7 @@ raw = (
     or "http://localhost:1234"
 )  # hard default
 SERVER_LIST = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
-TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", 90))
+TIMEOUT = float(os.getenv("LMSTUDIO_TIMEOUT", "90"))
 LLM_LMSTUDIO_TTL = os.getenv("LLM_LMSTUDIO_TTL")
 
 # --------------------------------------------------------------------------- #
@@ -259,7 +263,7 @@ class LMStudioBaseModel:
 
     can_stream: bool = True
     supports_tools: bool = True
-    attachment_types = {  # Task 1.1
+    attachment_types: ClassVar[set[str]] = {
         "image/png",
         "image/jpeg",
         "image/gif",
@@ -531,180 +535,231 @@ class LMStudioBaseModel:
             )
         return messages
 
-    def _build_messages(self, prompt: llm.Prompt, conversation) -> list[dict]:
-        msgs: list[dict] = []
-        if prompt.system:
-            msgs.append({"role": "system", "content": prompt.system})
+    def _build_messages(self, prompt: llm.Prompt, conversation=None) -> list[dict]:
+        """Translate LLM's canonical structured chain to Chat Completions.
 
-        # Handle conversation history with tools and tool results
-        if conversation:
-            for prev in conversation.responses:
-                # Add system prompt from previous turn if it exists
-                if hasattr(prev.prompt, "system") and prev.prompt.system:
-                    # Avoid duplicate system message if the immediate previous message was already system.
-                    # This can happen if a system message was the very first in conversation.
-                    if (
-                        not msgs
-                        or msgs[-1]["role"] != "system"
-                        or msgs[-1]["content"] != prev.prompt.system
-                    ):
-                        msgs.append({"role": "system", "content": prev.prompt.system})
+        Since LLM 0.32, ``prompt.messages`` already contains the complete
+        history. Walking ``conversation.responses`` as well would duplicate
+        that history, including the system prompt on chained tool calls.
+        """
+        messages: list[dict] = []
+        current_system: str | None = None
+        attachments = []
 
-                prev_prompt_text = prev.prompt.prompt
-                prev_encoded_attachments = []
+        for message in prompt.messages:
+            text_bits = []
+            reasoning_bits = []
+            image_parts = []
+            tool_calls = []
+            tool_results = []
+            had_attachment = False
 
-                # Check if the previous prompt object has attachments and encode them
-                if hasattr(prev.prompt, "attachments") and prev.prompt.attachments:
-                    prev_encoded_attachments = self._encode_attachments(prev.prompt)
-
-                # Only add user message if we have content (text or attachments)
-                if prev_prompt_text or prev_encoded_attachments:
-                    if prev_encoded_attachments:
-                        current_content_parts = []
-                        if prev_prompt_text:
-                            current_content_parts.append(
-                                {"type": "text", "text": prev_prompt_text}
-                            )
-                        current_content_parts.extend(prev_encoded_attachments)
-                        msgs.append({"role": "user", "content": current_content_parts})
-                    elif prev_prompt_text:
-                        msgs.append({"role": "user", "content": prev_prompt_text})
-
-                # Add tool results from previous conversation if they exist
-                if hasattr(prev.prompt, "tool_results") and prev.prompt.tool_results:
-                    tool_result_messages = self._encode_tool_results(
-                        prev.prompt.tool_results
+            for part in message.parts:
+                if isinstance(part, TextPart):
+                    text_bits.append(part.text)
+                elif isinstance(part, ReasoningPart):
+                    if part.text and not part.redacted:
+                        reasoning_bits.append(part.text)
+                elif isinstance(part, AttachmentPart) and part.attachment:
+                    had_attachment = True
+                    attachments.append(part.attachment)
+                    image_parts.extend(self._encode_attachment(part.attachment))
+                elif isinstance(part, ToolCallPart):
+                    tool_calls.append(
+                        {
+                            "id": part.tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": part.name,
+                                "arguments": json.dumps(part.arguments),
+                            },
+                        }
                     )
-                    msgs.extend(tool_result_messages)
+                elif isinstance(part, ToolResultPart):
+                    tool_results.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": part.tool_call_id,
+                            "content": part.output,
+                        }
+                    )
 
-                # Add assistant response (could include tool calls)
-                assistant_response = prev.text_or_raise()
-                if assistant_response:
-                    msgs.append({"role": "assistant", "content": assistant_response})
+            if message.role == "tool":
+                messages.extend(tool_results)
+                continue
 
-                # Add any tool calls that were made by the assistant
-                try:
-                    tool_calls = prev.tool_calls_or_raise()
-                    if tool_calls:
-                        # In LM Studio format, tool calls are embedded in the assistant message
-                        # We need to modify the last assistant message to include tool_calls
-                        if msgs and msgs[-1]["role"] == "assistant":
-                            msgs[-1]["tool_calls"] = []
-                            for tc in tool_calls:
-                                msgs[-1]["tool_calls"].append(
-                                    {
-                                        "id": tc.tool_call_id,
-                                        "type": "function",
-                                        "function": {
-                                            "name": tc.name,
-                                            "arguments": json.dumps(tc.arguments),
-                                        },
-                                    }
-                                )
-                except Exception:
-                    # If tool calls fail, continue without them
-                    pass
+            text = "".join(text_bits)
+            if message.role == "system":
+                # OpenAI-compatible endpoints accept one active system prompt.
+                # Repeated unchanged system messages can occur in explicit
+                # histories, so avoid sending them more than once.
+                if text == current_system:
+                    continue
+                current_system = text
 
-        # Handle tool results from current prompt
-        if hasattr(prompt, "tool_results") and prompt.tool_results:
-            tool_result_messages = self._encode_tool_results(prompt.tool_results)
-            msgs.extend(tool_result_messages)
-
-        # current turn - only add if not just tool results
-        if prompt.prompt or prompt.attachments:
-            current_turn_content_parts = []
-            if prompt.prompt:  # Add text part if it exists
-                current_turn_content_parts.append(
-                    {"type": "text", "text": prompt.prompt}
-                )
-
-            img_parts = self._encode_attachments(prompt)
-            current_turn_content_parts.extend(img_parts)
-
-            if current_turn_content_parts:
-                msgs.append({"role": "user", "content": current_turn_content_parts})
-            elif prompt.prompt is not None:  # Empty string should still be sent
-                msgs.append({"role": "user", "content": prompt.prompt})
+            if image_parts:
+                content = []
+                if text:
+                    content.append({"type": "text", "text": text})
+                content.extend(image_parts)
             else:
-                # Even with no text or images, we still need to add a user message
-                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                    print(
-                        "LMSTUDIO DEBUG: Building message for current turn with no text and no encodable images. Sending empty text content.",
-                        file=sys.stderr,
-                    )
-                msgs.append({"role": "user", "content": ""})
+                content = text or None
 
-        # Task 2.1: Warn if attachments are present but model doesn't support images
-        if prompt.attachments and not self.supports_images:
-            # Check if any of the attachments are of a type the model *would* process if it supported images
-            # This avoids warning if only non-image attachments are present (future-proofing)
-            has_potential_image_attachment = False
-            for attachment in prompt.attachments:
-                try:
-                    resolved_type = attachment.resolve_type()
-                    if (
-                        resolved_type in self.attachment_types
-                    ):  # self.attachment_types contains image MIME types
-                        has_potential_image_attachment = True
-                        break
-                except Exception:
-                    # If type resolution fails, assume it might have been an image for warning purposes
-                    has_potential_image_attachment = True
-                    break
+            entry = {"role": message.role, "content": content}
+            if reasoning_bits and message.role == "assistant":
+                # LM Studio exposes reasoning from OpenAI-compatible models in
+                # this field and accepts it again in conversation history.
+                entry["reasoning_content"] = "".join(reasoning_bits)
+            if tool_calls:
+                entry["tool_calls"] = tool_calls
+                if not text and not image_parts:
+                    entry["content"] = None
+            elif had_attachment and message.role == "user" and entry["content"] is None:
+                # Keep a user turn when its only attachment could not be
+                # encoded, rather than sending an entirely empty chain.
+                entry["content"] = ""
 
-            if has_potential_image_attachment:
-                print(
-                    f"LMSTUDIO WARN: Attachments provided, but the selected model '{self.model_id}' "
-                    f"may not support images (supports_images={self.supports_images}). Image attachments will likely be ignored by the model.",
-                    file=sys.stderr,
-                )
+            # An assistant message containing only tool calls is meaningful;
+            # empty user/system messages are not.
+            if (
+                entry["content"] is None
+                and not tool_calls
+                and not (reasoning_bits and message.role == "assistant")
+            ):
+                continue
+            messages.append(entry)
 
-        return msgs
+        self._warn_for_unsupported_attachments(attachments)
+        return messages
 
-    def _encode_attachments(self, prompt: llm.Prompt) -> list[dict]:
-        """Encode attachments from the prompt using llm.Attachment API."""  # Task 1.2
-        encoded_attachments = []
-        if not prompt.attachments:
-            return encoded_attachments
+    def _warn_for_unsupported_attachments(self, attachments) -> None:
+        if self.supports_images or not attachments:
+            return
+        for attachment in attachments:
+            try:
+                if attachment.resolve_type() not in self.attachment_types:
+                    continue
+            except Exception:
+                pass
+            print(
+                f"LMSTUDIO WARN: Attachments provided, but the selected model '{self.model_id}' "
+                f"may not support images (supports_images={self.supports_images}). Image attachments will likely be ignored by the model.",
+                file=sys.stderr,
+            )
+            return
 
-        for attachment in prompt.attachments:
-            # Only process attachments if the model supports images
-            # and the attachment type is one of the supported image types.
-            # llm CLI should have already filtered by attachment_types,
-            # but this is an additional safeguard.
-            if self.supports_images:
-                try:
-                    resolved_type = attachment.resolve_type()
-                    if resolved_type in self.attachment_types:
-                        base64_content = attachment.base64_content()
-                        data_uri = f"data:{resolved_type};base64,{base64_content}"
-                        encoded_attachments.append(
-                            {"type": "image_url", "image_url": {"url": data_uri}}
-                        )
-                        if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                            print(
-                                f"LMSTUDIO DEBUG: Encoded image attachment: {attachment.path or attachment.url or 'content'} as {resolved_type}.",
-                                file=sys.stderr,
-                            )
-                    elif os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                        print(
-                            f"LMSTUDIO DEBUG: Attachment type {resolved_type} not in model's supported image types. Skipping {attachment.path or attachment.url or 'content'}.",
-                            file=sys.stderr,
-                        )
-
-                except Exception as e:
-                    print(
-                        f"LMSTUDIO WARN: Could not process attachment {attachment.path or attachment.url or 'content'}: {e}. Skipping.",
-                        file=sys.stderr,
-                    )
-            elif (
-                os.getenv("LLM_LMSTUDIO_DEBUG") == "1"
-            ):  # Model does not support images but attachments present
+    def _encode_attachment(self, attachment: llm.Attachment) -> list[dict]:
+        """Encode one image attachment as an OpenAI image_url content part."""
+        if not self.supports_images:
+            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
                 print(
                     f"LMSTUDIO DEBUG: Model {self.model_id} does not support images, but attachment {attachment.path or attachment.url or 'content'} was provided. Ignoring.",
                     file=sys.stderr,
                 )
+            return []
+        try:
+            resolved_type = attachment.resolve_type()
+            if resolved_type not in self.attachment_types:
+                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                    print(
+                        f"LMSTUDIO DEBUG: Attachment type {resolved_type} not in model's supported image types. Skipping {attachment.path or attachment.url or 'content'}.",
+                        file=sys.stderr,
+                    )
+                return []
+            base64_content = attachment.base64_content()
+            data_uri = f"data:{resolved_type};base64,{base64_content}"
+            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                print(
+                    f"LMSTUDIO DEBUG: Encoded image attachment: {attachment.path or attachment.url or 'content'} as {resolved_type}.",
+                    file=sys.stderr,
+                )
+            return [{"type": "image_url", "image_url": {"url": data_uri}}]
+        except Exception as e:
+            print(
+                f"LMSTUDIO WARN: Could not process attachment {attachment.path or attachment.url or 'content'}: {e}. Skipping.",
+                file=sys.stderr,
+            )
+            return []
+
+    def _encode_attachments(self, prompt: llm.Prompt) -> list[dict]:
+        """Backward-compatible helper for encoding prompt attachments."""
+        encoded_attachments = []
+        for attachment in prompt.attachments:
+            encoded_attachments.extend(self._encode_attachment(attachment))
         return encoded_attachments
+
+    def _tool_call_from_data(self, tool_call_data: dict) -> tuple[llm.ToolCall, str]:
+        function_data = tool_call_data.get("function", {})
+        arguments_json = function_data.get("arguments") or "{}"
+        return (
+            llm.ToolCall(
+                name=function_data.get("name", ""),
+                arguments=json.loads(arguments_json),
+                tool_call_id=tool_call_data.get("id") or f"tc_{uuid.uuid4().hex}",
+            ),
+            arguments_json,
+        )
+
+    def _record_tool_call(self, response, tool_call_data: dict) -> list[StreamEvent]:
+        tool_call, arguments_json = self._tool_call_from_data(tool_call_data)
+        response.add_tool_call(tool_call)
+        return [
+            StreamEvent(
+                type="tool_call_name",
+                chunk=tool_call.name,
+                tool_call_id=tool_call.tool_call_id,
+            ),
+            StreamEvent(
+                type="tool_call_args",
+                chunk=arguments_json,
+                tool_call_id=tool_call.tool_call_id,
+            ),
+        ]
+
+    def _set_response_metadata(self, response, payload: dict) -> None:
+        response.response_json = payload
+        resolved_model = payload.get("model")
+        if not resolved_model and payload.get("chunks"):
+            resolved_model = next(
+                (
+                    chunk.get("model")
+                    for chunk in reversed(payload["chunks"])
+                    if chunk.get("model")
+                ),
+                None,
+            )
+        if resolved_model:
+            response.set_resolved_model(resolved_model)
+
+    def _set_usage(self, response, usage: dict | None) -> None:
+        if not usage:
+            return
+        details = {
+            key: value
+            for key, value in usage.items()
+            if key not in {"prompt_tokens", "completion_tokens", "total_tokens"}
+        }
+        response.set_usage(
+            input=usage.get("prompt_tokens"),
+            output=usage.get("completion_tokens"),
+            details=details or None,
+        )
+
+        # LM Studio sometimes wraps the engine's JSON error in a string such
+        # as: "Engine protocol ...: {\"error\": {...}}".
+        message = details.get("message")
+        if isinstance(message, str):
+            json_start = message.find("{")
+            if json_start != -1:
+                try:
+                    nested = json.loads(message[json_start:])
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    nested_details = self._error_details(nested)
+                    if nested_details:
+                        return nested_details
+        return details
 
 
 class LMStudioModel(LMStudioBaseModel, llm.Model):
@@ -719,7 +774,7 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
         stream: bool,
         response: llm.Response,
         conversation=None,
-    ):
+    ) -> Iterator[str | StreamEvent]:
         # --- Auto-loading Logic ---
         if not self._is_model_loaded():
             if not self._attempt_load_model():
@@ -769,6 +824,8 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
         # Set stream value in payload *after* potential override
         if stream:
             payload["stream"] = True
+            # LM Studio only sends the final usage chunk if we ask for it
+            payload["stream_options"] = {"include_usage": True}
         else:
             # Ensure stream: false is explicitly set if needed
             payload["stream"] = False
@@ -829,35 +886,44 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
 
         # --- Process Response --- #
         if stream:
-            accumulated_content = ""
-            current_tool_calls = []  # Stores partially built tool calls
-            finish_reason = None
+            current_tool_calls = []
+            chunks = []
+            usage = None
+            event_name = None
 
             for line in r.iter_lines():
-                if not line or line == b"data: [DONE]" or not line.startswith(b"data:"):
+                if not line:
+                    event_name = None
+                    continue
+                if line.startswith(b"event:"):
+                    event_name = line.decode("utf-8", "replace")[6:].strip()
+                    continue
+                if line == b"data: [DONE]" or not line.startswith(b"data:"):
                     continue
                 try:
                     chunk_data = line.decode("utf-8")[5:].strip()
                     if not chunk_data:
                         continue
                     chunk = json.loads(chunk_data)
+                    chunks.append(chunk)
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
+                    if not chunk.get("choices"):
+                        continue
                     choice = chunk["choices"][0]
                     delta = choice.get("delta", {})
-                    finish_reason = choice.get(
-                        "finish_reason"
-                    )  # Capture finish reason from last chunk
 
-                    # Accumulate content
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                    if reasoning:
+                        yield StreamEvent(type="reasoning", chunk=reasoning)
+
                     token = delta.get("content") or ""
                     if token:
-                        accumulated_content += token
-                        yield token
+                        yield StreamEvent(type="text", chunk=token)
 
-                    # Accumulate tool calls
                     if delta.get("tool_calls"):
                         for tc_delta in delta["tool_calls"]:
                             index = tc_delta["index"]
-                            # Ensure current_tool_calls list is long enough
                             while len(current_tool_calls) <= index:
                                 current_tool_calls.append(
                                     {
@@ -867,7 +933,6 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                                     }
                                 )
 
-                            # Update the specific tool call at the given index
                             if tc_delta.get("id"):
                                 current_tool_calls[index]["id"] += tc_delta["id"]
                             if tc_delta.get("function", {}).get("name"):
@@ -878,33 +943,20 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                                 current_tool_calls[index]["function"]["arguments"] += (
                                     tc_delta["function"]["arguments"]
                                 )
+                except (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError):
+                    continue
 
-                    if finish_reason is not None:
-                        break  # Stop processing stream after finish reason
-                except Exception:
-                    # TODO: Maybe add debug logging here?
-                    continue  # Ignore parsing errors, etc.
-
-            # After stream finishes, process accumulated tool calls if reason indicates it
-            if finish_reason == "tool_calls":
-                # Finalize accumulated tool calls and add them to response
-                for tc in current_tool_calls:
-                    try:
-                        response.add_tool_call(
-                            llm.ToolCall(
-                                name=tc["function"]["name"],
-                                arguments=json.loads(tc["function"]["arguments"])
-                                if tc["function"]["arguments"]
-                                else {},
-                                tool_call_id=tc["id"],
-                            )
+            self._set_response_metadata(response, {"chunks": chunks})
+            self._set_usage(response, usage)
+            for tool_call_data in current_tool_calls:
+                try:
+                    yield from self._record_tool_call(response, tool_call_data)
+                except (json.JSONDecodeError, TypeError) as e:
+                    if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                        print(
+                            f"LMSTUDIO DEBUG: Error processing tool call: {e}",
+                            file=sys.stderr,
                         )
-                    except Exception as e:
-                        if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                            print(
-                                f"LMSTUDIO DEBUG: Error processing tool call: {e}",
-                                file=sys.stderr,
-                            )
 
         else:  # Non-streaming
             try:
@@ -926,50 +978,25 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                 )
                 raise llm.ModelError("Unexpected error processing LM Studio response.")
 
-            choice = res.get("choices", [{}])[0]  # Safer access
-            finish_reason = choice.get("finish_reason")
+            self._set_response_metadata(response, res)
+            choice = res.get("choices", [{}])[0]
+            message = choice.get("message", {})
 
-            # Extract content
-            message_content = choice.get("message", {}).get("content")
-            text = (
-                message_content if message_content is not None else ""
-            )  # Handle potential None
-            text = text.strip()  # Strip leading/trailing whitespace
-
-            # Handle tool calls
-            if finish_reason == "tool_calls":
-                tool_calls_data = choice.get("message", {}).get("tool_calls")
-                if tool_calls_data:
-                    for tc_data in tool_calls_data:
-                        try:
-                            function_data = tc_data.get("function", {})
-                            arguments_str = function_data.get("arguments", "{}")
-                            response.add_tool_call(
-                                llm.ToolCall(
-                                    name=function_data.get("name", ""),
-                                    arguments=json.loads(arguments_str)
-                                    if arguments_str
-                                    else {},
-                                    tool_call_id=tc_data.get("id"),
-                                )
-                            )
-                        except Exception as e:
-                            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                                print(
-                                    f"LMSTUDIO DEBUG: Error processing tool call: {e}",
-                                    file=sys.stderr,
-                                )
-
-            # Record usage
-            usage = res.get("usage", {})
-            if usage:
-                response.set_usage(
-                    input=usage.get("prompt_tokens", 0),
-                    output=usage.get("completion_tokens", 0),
-                )
-
-            # Yield the content
-            yield text
+            reasoning = message.get("reasoning_content") or message.get("reasoning")
+            if reasoning:
+                yield StreamEvent(type="reasoning", chunk=reasoning)
+            for tool_call_data in message.get("tool_calls") or []:
+                try:
+                    yield from self._record_tool_call(response, tool_call_data)
+                except (json.JSONDecodeError, TypeError) as e:
+                    if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                        print(
+                            f"LMSTUDIO DEBUG: Error processing tool call: {e}",
+                            file=sys.stderr,
+                        )
+            if message.get("content"):
+                yield StreamEvent(type="text", chunk=message["content"])
+            self._set_usage(response, res.get("usage"))
 
         # --- End Process Response --- #
 
@@ -984,7 +1011,7 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
         stream: bool,
         response: llm.AsyncResponse,
         conversation: llm.AsyncConversation | None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str | StreamEvent, None]:
         # --- Auto-loading Logic (using sync helper) ---
         if not self._is_model_loaded():
             if not self._attempt_load_model():
@@ -1029,6 +1056,8 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
 
         if stream:
             payload["stream"] = True
+            # LM Studio only sends the final usage chunk if we ask for it
+            payload["stream_options"] = {"include_usage": True}
         else:
             payload["stream"] = False
         # --- End Prepare Payload ---
@@ -1048,30 +1077,43 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                     async with client.stream("POST", url, json=payload) as r:
                         r.raise_for_status()
                         current_tool_calls = []
-                        finish_reason = None
+                        chunks = []
+                        usage = None
+                        event_name = None
 
                         async for line in r.aiter_lines():
-                            if (
-                                not line
-                                or line == "data: [DONE]"
-                                or not line.startswith("data:")
-                            ):
+                            if not line:
+                                event_name = None
+                                continue
+                            if line.startswith("event:"):
+                                event_name = line[6:].strip()
+                                continue
+                            if line == "data: [DONE]" or not line.startswith("data:"):
                                 continue
                             try:
                                 chunk_data = line[5:].strip()
                                 if not chunk_data:
                                     continue
                                 chunk = json.loads(chunk_data)
+                                chunks.append(chunk)
+                                if chunk.get("usage"):
+                                    usage = chunk["usage"]
+                                if not chunk.get("choices"):
+                                    continue
                                 choice = chunk["choices"][0]
                                 delta = choice.get("delta", {})
-                                finish_reason = choice.get("finish_reason")
 
-                                # Accumulate content
+                                reasoning = delta.get("reasoning_content") or delta.get(
+                                    "reasoning"
+                                )
+                                if reasoning:
+                                    yield StreamEvent(
+                                        type="reasoning", chunk=reasoning
+                                    )
                                 token = delta.get("content") or ""
                                 if token:
-                                    yield token
+                                    yield StreamEvent(type="text", chunk=token)
 
-                                # Accumulate tool calls (logic adapted from sync)
                                 if delta.get("tool_calls"):
                                     for tc_delta in delta["tool_calls"]:
                                         index = tc_delta["index"]
@@ -1100,35 +1142,27 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                                             current_tool_calls[index]["function"][
                                                 "arguments"
                                             ] += tc_delta["function"]["arguments"]
+                            except (
+                                json.JSONDecodeError,
+                                KeyError,
+                                TypeError,
+                            ):
+                                continue
 
-                                if finish_reason is not None:
-                                    break
-                            except Exception:
-                                continue  # Ignore parsing errors
-
-                        # After stream finishes, process tool calls
-                        if finish_reason == "tool_calls":
-                            for tc in current_tool_calls:
-                                try:
-                                    response.add_tool_call(
-                                        llm.ToolCall(
-                                            name=tc["function"]["name"],
-                                            arguments=json.loads(
-                                                tc["function"]["arguments"]
-                                            )
-                                            if tc["function"]["arguments"]
-                                            else {},
-                                            tool_call_id=tc["id"],
-                                        )
+                        self._set_response_metadata(response, {"chunks": chunks})
+                        self._set_usage(response, usage)
+                        for tool_call_data in current_tool_calls:
+                            try:
+                                for event in self._record_tool_call(
+                                    response, tool_call_data
+                                ):
+                                    yield event
+                            except (json.JSONDecodeError, TypeError) as e:
+                                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                                    print(
+                                        f"LMSTUDIO DEBUG: Error processing async tool call: {e}",
+                                        file=sys.stderr,
                                     )
-                                except Exception as e:
-                                    if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                                        print(
-                                            f"LMSTUDIO DEBUG: Error processing async tool call: {e}",
-                                            file=sys.stderr,
-                                        )
-
-                        # Potential place to check for usage in final stream chunk if API supports it
 
                 else:  # Non-streaming async
                     r = await client.post(url, json=payload)
@@ -1157,44 +1191,29 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                             "Unexpected error processing LM Studio response."
                         )
 
+                    self._set_response_metadata(response, res)
                     choice = res.get("choices", [{}])[0]
-                    finish_reason = choice.get("finish_reason")
-
-                    message_content = choice.get("message", {}).get("content")
-                    text = message_content if message_content is not None else ""
-                    text = text.strip()
-
-                    if finish_reason == "tool_calls":
-                        tool_calls_data = choice.get("message", {}).get("tool_calls")
-                        if tool_calls_data:
-                            for tc_data in tool_calls_data:
-                                try:
-                                    function_data = tc_data.get("function", {})
-                                    arguments_str = function_data.get("arguments", "{}")
-                                    response.add_tool_call(
-                                        llm.ToolCall(
-                                            name=function_data.get("name", ""),
-                                            arguments=json.loads(arguments_str)
-                                            if arguments_str
-                                            else {},
-                                            tool_call_id=tc_data.get("id"),
-                                        )
-                                    )
-                                except Exception as e:
-                                    if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                                        print(
-                                            f"LMSTUDIO DEBUG: Error processing async tool call: {e}",
-                                            file=sys.stderr,
-                                        )
-
-                    usage = res.get("usage", {})
-                    if usage:
-                        response.set_usage(
-                            input=usage.get("prompt_tokens", 0),
-                            output=usage.get("completion_tokens", 0),
-                        )
-
-                    yield text  # Yield the single result
+                    message = choice.get("message", {})
+                    reasoning = message.get("reasoning_content") or message.get(
+                        "reasoning"
+                    )
+                    if reasoning:
+                        yield StreamEvent(type="reasoning", chunk=reasoning)
+                    for tool_call_data in message.get("tool_calls") or []:
+                        try:
+                            for event in self._record_tool_call(
+                                response, tool_call_data
+                            ):
+                                yield event
+                        except (json.JSONDecodeError, TypeError) as e:
+                            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                                print(
+                                    f"LMSTUDIO DEBUG: Error processing async tool call: {e}",
+                                    file=sys.stderr,
+                                )
+                    if message.get("content"):
+                        yield StreamEvent(type="text", chunk=message["content"])
+                    self._set_usage(response, res.get("usage"))
 
         except httpx.TimeoutException:
             if hasattr(prompt, "tools") and prompt.tools:

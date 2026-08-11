@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Support for LLM 0.32 structured messages and streaming events, including structured text, reasoning, and tool-call response parts.
+- Resolved model IDs and raw provider response payloads are now recorded on responses when LM Studio supplies them.
+
+### Changed
+- Conversation requests now consume the canonical `prompt.messages` chain instead of rebuilding history from `conversation.responses`.
+- Raised the minimum LLM version to 0.32.
+
+### Fixed
+- System prompts are no longer repeated between tool-call rounds.
+- Assistant messages containing tool calls but no text are preserved with `content: null`, keeping tool-call and tool-result ordering valid.
+- Streaming requests continue through final usage-only chunks and record usage consistently in sync and async flows.
+
 ## v0.2.1 - 2025-12-06
 
 ### Changed
