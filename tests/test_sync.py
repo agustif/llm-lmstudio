@@ -1,7 +1,5 @@
-import io
 import json
 from types import SimpleNamespace
-from typing import List, Optional
 from unittest.mock import MagicMock, patch
 
 import llm
@@ -70,12 +68,12 @@ def mock_attachment_factory():
     """Factory to create MagicMock llm.Attachment objects."""
 
     def _factory(
-        mime_type: Optional[str] = "image/png",
-        base64_content: Optional[str] = "dGVzdA==",  # "test"
-        path: Optional[str] = "test.png",
-        url: Optional[str] = None,
-        resolve_type_raises: Optional[Exception] = None,
-        base64_content_raises: Optional[Exception] = None,
+        mime_type: str | None = "image/png",
+        base64_content: str | None = "dGVzdA==",  # "test"
+        path: str | None = "test.png",
+        url: str | None = None,
+        resolve_type_raises: Exception | None = None,
+        base64_content_raises: Exception | None = None,
     ):
         attachment = MagicMock(spec=llm.Attachment)
         attachment.path = path
@@ -101,9 +99,9 @@ def mock_prompt_factory():
     """Factory to create MagicMock llm.Prompt objects."""
 
     def _factory(
-        prompt_text: Optional[str],
-        attachments: Optional[List[MagicMock]] = None,
-        system_prompt: Optional[str] = None,
+        prompt_text: str | None,
+        attachments: list[MagicMock] | None = None,
+        system_prompt: str | None = None,
     ):
         prompt = MagicMock(spec=llm.Prompt)
         prompt.prompt = prompt_text
@@ -283,7 +281,7 @@ def test_build_messages_attachment_processing_error(
         mime_type="image/png", base64_content="good_data", path="good.png"
     )
     bad_image = mock_attachment_factory(
-        base64_content_raises=IOError("File read error"), path="bad.png"
+        base64_content_raises=OSError("File read error"), path="bad.png"
     )
     prompt = mock_prompt_factory(
         prompt_text="Process these.", attachments=[good_image, bad_image]
