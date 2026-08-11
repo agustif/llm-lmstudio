@@ -823,46 +823,103 @@ class LMStudioBaseModel:
         if not line or line == "data: [DONE]" or not line.startswith("data:"):
             return
 
-        try:
-            chunk_data = line[5:].strip()
-            if not chunk_data:
-                return
-            chunk = json.loads(chunk_data)
-            state.chunks.append(chunk)
-            if chunk.get("usage"):
-                state.usage = chunk["usage"]
-            if not chunk.get("choices"):
-                return
-
-            delta = chunk["choices"][0].get("delta", {})
-            reasoning = delta.get("reasoning_content") or delta.get("reasoning")
-            if reasoning:
-                yield StreamEvent(type="reasoning", chunk=reasoning)
-
-            token = delta.get("content") or ""
-            if token:
-                yield StreamEvent(type="text", chunk=token)
-
-            for tool_call_delta in delta.get("tool_calls") or []:
-                index = tool_call_delta["index"]
-                while len(state.tool_calls) <= index:
-                    state.tool_calls.append(
-                        {
-                            "id": "",
-                            "type": "function",
-                            "function": {"name": "", "arguments": ""},
-                        }
-                    )
-
-                tool_call = state.tool_calls[index]
-                tool_call["id"] += tool_call_delta.get("id") or ""
-                function_delta = tool_call_delta.get("function", {})
-                tool_call["function"]["name"] += function_delta.get("name") or ""
-                tool_call["function"]["arguments"] += (
-                    function_delta.get("arguments") or ""
-                )
-        except (json.JSONDecodeError, KeyError, TypeError):
+        chunk_data = line[5:].strip()
+        if not chunk_data:
             return
+        try:
+            chunk = json.loads(chunk_data)
+        except json.JSONDecodeError as e:
+            _debug(f"LMSTUDIO DEBUG: Ignoring malformed stream JSON: {e}")
+            return
+        if not isinstance(chunk, dict):
+            _debug("LMSTUDIO DEBUG: Ignoring non-object stream chunk")
+            return
+
+        state.chunks.append(chunk)
+        usage = chunk.get("usage")
+        if isinstance(usage, dict):
+            state.usage = usage
+        elif usage is not None:
+            _debug("LMSTUDIO DEBUG: Ignoring malformed stream usage")
+
+        choices = chunk.get("choices")
+        if not choices:
+            return
+        if not isinstance(choices, list) or not isinstance(choices[0], dict):
+            _debug("LMSTUDIO DEBUG: Ignoring malformed stream choices")
+            return
+
+        delta = choices[0].get("delta", {})
+        if not isinstance(delta, dict):
+            _debug("LMSTUDIO DEBUG: Ignoring malformed stream delta")
+            return
+
+        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+        if isinstance(reasoning, str) and reasoning:
+            yield StreamEvent(type="reasoning", chunk=reasoning)
+        elif reasoning is not None and not isinstance(reasoning, str):
+            _debug("LMSTUDIO DEBUG: Ignoring malformed reasoning fragment")
+
+        token = delta.get("content")
+        if isinstance(token, str) and token:
+            yield StreamEvent(type="text", chunk=token)
+        elif token is not None and not isinstance(token, str):
+            _debug("LMSTUDIO DEBUG: Ignoring malformed text fragment")
+
+        tool_call_deltas = delta.get("tool_calls") or []
+        if not isinstance(tool_call_deltas, list):
+            _debug("LMSTUDIO DEBUG: Ignoring malformed tool-call list")
+            return
+        for tool_call_delta in tool_call_deltas:
+            try:
+                self._apply_tool_call_delta(tool_call_delta, state)
+            except (TypeError, ValueError) as e:
+                _debug(f"LMSTUDIO DEBUG: Ignoring malformed tool-call delta: {e}")
+
+    def _apply_tool_call_delta(
+        self,
+        tool_call_delta: Any,
+        state: StreamState,
+    ) -> None:
+        if not isinstance(tool_call_delta, dict):
+            raise TypeError("tool-call delta must be an object")
+
+        index = tool_call_delta.get("index")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            raise ValueError("tool-call index must be a non-negative integer")
+
+        tool_call_id = tool_call_delta.get("id")
+        if tool_call_id is None:
+            tool_call_id = ""
+        function_delta = tool_call_delta.get("function")
+        if function_delta is None:
+            function_delta = {}
+        if not isinstance(function_delta, dict):
+            raise TypeError("tool-call function must be an object")
+        name = function_delta.get("name")
+        if name is None:
+            name = ""
+        arguments = function_delta.get("arguments")
+        if arguments is None:
+            arguments = ""
+        if not all(
+            isinstance(value, str) for value in (tool_call_id, name, arguments)
+        ):
+            raise TypeError("tool-call fragments must be strings")
+
+        while len(state.tool_calls) <= index:
+            state.tool_calls.append(
+                {
+                    "id": "",
+                    "type": "function",
+                    "function": {"name": "", "arguments": ""},
+                }
+            )
+
+        tool_call = state.tool_calls[index]
+        tool_call["id"] += tool_call_id
+        tool_call["function"]["name"] += name
+        tool_call["function"]["arguments"] += arguments
 
     def _finalize_stream(
         self,

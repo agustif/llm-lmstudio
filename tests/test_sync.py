@@ -622,6 +622,34 @@ def test_prepare_chat_request_for_schema_forces_non_streaming(
     }
 
 
+def test_process_stream_line_ignores_malformed_input_without_corrupting_state(
+    vlm_model, monkeypatch, capsys
+):
+    monkeypatch.setenv("LLM_LMSTUDIO_DEBUG", "1")
+    state = llm_lmstudio.StreamState()
+    lines = [
+        "data: {not JSON",
+        'data: {"choices": {"delta": {}}}',
+        'data: {"choices": [{"delta": []}]}',
+        'data: {"choices": [{"delta": {"tool_calls": [{"id": "call_1"}]}}]}',
+        'data: {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": {}}}]}}]}',
+        'data: {"choices": [{"delta": {"content": "Recovered"}}]}',
+    ]
+
+    events = [
+        event
+        for line in lines
+        for event in vlm_model._process_stream_line(line, state)
+    ]
+
+    assert [(event.type, event.chunk) for event in events] == [
+        ("text", "Recovered")
+    ]
+    assert state.tool_calls == []
+    assert len(state.chunks) == 5
+    assert "Ignoring malformed stream JSON" in capsys.readouterr().err
+
+
 def test_process_and_finalize_stream(vlm_model):
     response = MagicMock()
     state = llm_lmstudio.StreamState()
