@@ -135,8 +135,18 @@ To set up this plugin for development:
 Or do the classic complicated dance:
 1. Create a virtual environment: `python -m venv .venv`
 2. Activate it: `source .venv/bin/activate`
-3. Install dependencies, including dev dependencies: `pip install -e . --group dev
+3. Install dependencies, including dev dependencies: `pip install -e . --group dev`
 4. Run tests: `pytest`
+
+### Live acceptance verification
+
+`manual-testing.md` is an executable Showboat document. It verifies the plugin against a live LM Studio server with the documented GGUF, MLX, embedding, and vision models.
+
+```bash
+uvx showboat verify manual-testing.md
+```
+
+This command is slower than the unit tests. It also unloads and reloads models in LM Studio.
 
 The asynchronous tests in `tests/test_llm_lmstudio_async.py` (among others) use `pytest-vcr` to record and replay HTTP interactions with the LM Studio server. To record new cassettes:
 1. Ensure LM Studio is running with the target model(s) loaded (e.g., `llava-v1.5-7b`).
