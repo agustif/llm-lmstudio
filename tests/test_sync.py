@@ -606,6 +606,47 @@ def test_prepare_chat_request_for_schema_forces_non_streaming(
     }
 
 
+def test_process_non_streaming_response(vlm_model):
+    response = MagicMock()
+    payload = {
+        "model": "resolved-model",
+        "choices": [
+            {
+                "message": {
+                    "reasoning_content": "Thinking",
+                    "content": "Done",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "lookup",
+                                "arguments": '{"query": "birds"}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 42, "completion_tokens": 5},
+    }
+
+    events = list(vlm_model._process_non_streaming_response(response, payload))
+
+    assert [(event.type, event.chunk) for event in events] == [
+        ("reasoning", "Thinking"),
+        ("tool_call_name", "lookup"),
+        ("tool_call_args", '{"query": "birds"}'),
+        ("text", "Done"),
+    ]
+    assert response.response_json == payload
+    response.set_resolved_model.assert_called_once_with("resolved-model")
+    response.set_usage.assert_called_once_with(input=42, output=5, details=None)
+    added_call = response.add_tool_call.call_args.args[0]
+    assert added_call.name == "lookup"
+    assert added_call.arguments == {"query": "birds"}
+    assert added_call.tool_call_id == "call_1"
+
+
 def test_set_usage_accepts_message_with_embedded_json(vlm_model):
     response = MagicMock()
     usage = {

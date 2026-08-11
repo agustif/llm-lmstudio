@@ -806,6 +806,34 @@ class LMStudioBaseModel:
             details=details or None,
         )
 
+    def _process_non_streaming_response(
+        self,
+        response,
+        payload: dict[str, Any],
+    ) -> Iterator[StreamEvent]:
+        self._set_response_metadata(response, payload)
+        choice = payload.get("choices", [{}])[0]
+        message = choice.get("message", {})
+
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        if reasoning:
+            yield StreamEvent(type="reasoning", chunk=reasoning)
+
+        for tool_call_data in message.get("tool_calls") or []:
+            try:
+                yield from self._record_tool_call(response, tool_call_data)
+            except (json.JSONDecodeError, TypeError) as e:
+                if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
+                    print(
+                        f"LMSTUDIO DEBUG: Error processing tool call: {e}",
+                        file=sys.stderr,
+                    )
+
+        if message.get("content"):
+            yield StreamEvent(type="text", chunk=message["content"])
+
+        self._set_usage(response, payload.get("usage"))
+
 
 class LMStudioModel(LMStudioBaseModel, llm.Model):
     """Chat/completion model class."""
@@ -970,25 +998,7 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                 )
                 raise llm.ModelError("Unexpected error processing LM Studio response.")
 
-            self._set_response_metadata(response, res)
-            choice = res.get("choices", [{}])[0]
-            message = choice.get("message", {})
-
-            reasoning = message.get("reasoning_content") or message.get("reasoning")
-            if reasoning:
-                yield StreamEvent(type="reasoning", chunk=reasoning)
-            for tool_call_data in message.get("tool_calls") or []:
-                try:
-                    yield from self._record_tool_call(response, tool_call_data)
-                except (json.JSONDecodeError, TypeError) as e:
-                    if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                        print(
-                            f"LMSTUDIO DEBUG: Error processing tool call: {e}",
-                            file=sys.stderr,
-                        )
-            if message.get("content"):
-                yield StreamEvent(type="text", chunk=message["content"])
-            self._set_usage(response, res.get("usage"))
+            yield from self._process_non_streaming_response(response, res)
 
         # --- End Process Response --- #
 
@@ -1141,29 +1151,8 @@ class LMStudioAsyncModel(LMStudioBaseModel, llm.AsyncModel):
                             "Unexpected error processing LM Studio response."
                         )
 
-                    self._set_response_metadata(response, res)
-                    choice = res.get("choices", [{}])[0]
-                    message = choice.get("message", {})
-                    reasoning = message.get("reasoning_content") or message.get(
-                        "reasoning"
-                    )
-                    if reasoning:
-                        yield StreamEvent(type="reasoning", chunk=reasoning)
-                    for tool_call_data in message.get("tool_calls") or []:
-                        try:
-                            for event in self._record_tool_call(
-                                response, tool_call_data
-                            ):
-                                yield event
-                        except (json.JSONDecodeError, TypeError) as e:
-                            if os.getenv("LLM_LMSTUDIO_DEBUG") == "1":
-                                print(
-                                    f"LMSTUDIO DEBUG: Error processing async tool call: {e}",
-                                    file=sys.stderr,
-                                )
-                    if message.get("content"):
-                        yield StreamEvent(type="text", chunk=message["content"])
-                    self._set_usage(response, res.get("usage"))
+                    for event in self._process_non_streaming_response(response, res):
+                        yield event
 
         except httpx.TimeoutException:
             if hasattr(prompt, "tools") and prompt.tools:
