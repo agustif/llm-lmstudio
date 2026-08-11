@@ -422,6 +422,16 @@ def test_encode_tools_produces_function_payload(vlm_model):
     ]
 
 
+def test_encode_tools_rejects_server_side_tools(vlm_model):
+    tool = llm.ServerSideTool({"type": "mcp", "server_label": "example"})
+
+    with pytest.raises(
+        llm.ModelError,
+        match="does not support server-side tools yet",
+    ):
+        vlm_model._encode_tools([tool])
+
+
 def test_build_messages_includes_tool_calls_from_history(
     vlm_model, mock_prompt_factory
 ):

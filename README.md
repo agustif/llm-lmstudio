@@ -164,5 +164,6 @@ The asynchronous tests in `tests/test_llm_lmstudio_async.py` (among others) use 
 
 ## Future work
 
+- Add server-side tool support through LM Studio's `/api/v1/chat` or `/v1/responses` endpoint. The current `/v1/chat/completions` integration supports custom tools only. Community contributions are welcome.
 - Migrate `manual-testing.md` to an opt-in Pytest acceptance suite that runs against a live LM Studio server. Keep these slower tests out of normal `pytest` runs.
 

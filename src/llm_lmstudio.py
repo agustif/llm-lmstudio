@@ -434,10 +434,17 @@ class LMStudioBaseModel:
     # --------------------------------------------------------------------- #
     #  Prompt helpers                                                       #
     # --------------------------------------------------------------------- #
-    def _encode_tools(self, tools: list[llm.Tool]) -> list[dict]:
+    def _encode_tools(
+        self, tools: list[llm.Tool | llm.ServerSideTool]
+    ) -> list[dict]:
         """Convert llm.Tool objects to LM Studio tools format."""
         encoded_tools = []
         for tool in tools:
+            if isinstance(tool, llm.ServerSideTool):
+                raise llm.ModelError(
+                    "llm-lmstudio does not support server-side tools yet. "
+                    "Support requires the LM Studio /api/v1/chat or /v1/responses endpoint."
+                )
             encoded_tools.append(
                 {
                     "type": "function",
