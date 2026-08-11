@@ -14,7 +14,7 @@ Version 0.3.0 and later require LLM 0.32 or newer and support its structured mes
 Make sure you have `llm` installed, then install this plugin from PyPI:
 
 ```bash
-pip install llm-lmstudio
+uv pip install llm-lmstudio
 ```
 
 Or, to install the latest development version directly from GitHub:
