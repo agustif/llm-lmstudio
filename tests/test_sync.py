@@ -310,7 +310,7 @@ def test_build_messages_no_text_no_valid_attachments(
     vlm_model, mock_prompt_factory, mock_attachment_factory, capsys
 ):
     failing_attachment = mock_attachment_factory(
-        resolve_type_raises=Exception("Cannot resolve"), path="fail.img"
+        resolve_type_raises=ValueError("Cannot resolve"), path="fail.img"
     )
     prompt = mock_prompt_factory(prompt_text=None, attachments=[failing_attachment])
     with patch.dict("os.environ", {"LLM_LMSTUDIO_DEBUG": "1"}):

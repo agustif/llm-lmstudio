@@ -106,7 +106,7 @@ def _fetch_models(base: str) -> tuple[list[dict[str, Any]], str]:
 
         _cache[base] = (meta, api_path)
         return meta, api_path
-    except Exception as e:
+    except (requests.RequestException, KeyError, TypeError, ValueError) as e:
         _errors[base] = e
         return [], ""  # Return empty list and empty path on error
 
@@ -372,10 +372,10 @@ class LMStudioBaseModel:
                     pass  # Fallback to checking /v1/models list
                 else:
                     r.raise_for_status()  # Raise other errors
-            except requests.RequestException:
-                pass  # Fallback to checking /v1/models list on connection errors
-            except Exception:  # Catch JSON errors etc.
-                pass  # Fallback
+            except requests.RequestException as e:
+                _debug(
+                    f"LMSTUDIO DEBUG: Could not check model via /api/v0; falling back to /v1/models: {e}"
+                )
 
         # Fallback or if using /v1: Check the /v1/models list (only shows loaded models)
         try:
@@ -386,7 +386,7 @@ class LMStudioBaseModel:
             r.raise_for_status()
             loaded_models = r.json().get("data", [])
             return any(m.get("id") == self.raw_id for m in loaded_models)
-        except Exception as e:
+        except (requests.RequestException, AttributeError, TypeError) as e:
             _debug(
                 f"LMSTUDIO DEBUG: Could not check loaded models via /v1/models: {e}"
             )
@@ -567,8 +567,10 @@ class LMStudioBaseModel:
             try:
                 if attachment.resolve_type() not in self.attachment_types:
                     continue
-            except Exception:
-                pass
+            except (ValueError, OSError, TypeError, httpx.HTTPError) as e:
+                _debug(
+                    f"LMSTUDIO DEBUG: Could not resolve attachment type while checking model support: {e}"
+                )
             print(
                 f"LMSTUDIO WARN: Attachments provided, but the selected model '{self.model_id}' "
                 f"may not support images (supports_images={self.supports_images}). Image attachments will likely be ignored by the model.",
@@ -596,7 +598,7 @@ class LMStudioBaseModel:
                 f"LMSTUDIO DEBUG: Encoded image attachment: {attachment.path or attachment.url or 'content'} as {resolved_type}."
             )
             return [{"type": "image_url", "image_url": {"url": data_uri}}]
-        except Exception as e:
+        except (ValueError, OSError, TypeError, httpx.HTTPError) as e:
             print(
                 f"LMSTUDIO WARN: Could not process attachment {attachment.path or attachment.url or 'content'}: {e}. Skipping.",
                 file=sys.stderr,
@@ -869,8 +871,10 @@ class LMStudioModel(LMStudioBaseModel, llm.Model):
                         and err_data.get("error", {}).get("code") == "model_not_found"
                     ):
                         is_model_not_found = True
-            except Exception:
-                pass  # Ignore JSON parsing errors here
+            except (requests.exceptions.JSONDecodeError, AttributeError) as parse_error:
+                _debug(
+                    f"LMSTUDIO DEBUG: Could not parse LM Studio error response: {parse_error}"
+                )
 
             if is_model_not_found:
                 raise llm.ModelError(
